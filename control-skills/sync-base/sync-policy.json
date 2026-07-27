@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "target": "claude",
+  "repository": "daniileliseev1337/claude-base-v2",
+  "tag_prefix": "claude-v",
+  "transformation": "claude-native-v2",
+  "install_root": ".claude",
+  "client": {
+    "id": "claude-code",
+    "command": [
+      "claude",
+      "--version"
+    ],
+    "acceptance": "NOT_ACCEPTED",
+    "version_pattern": null
+  },
+  "evidence": {
+    "style": "verdicts",
+    "required_verdicts": [
+      "FULL_RELEASE_CLAUDE",
+      "RELEASE_INTEGRITY"
+    ],
+    "program_release": "2/3"
+  }
+}

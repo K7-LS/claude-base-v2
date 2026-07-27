@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "target": "claude",
+  "repository": "https://github.com/daniileliseev1337/claude-base-v2",
+  "transformation": "claude-native-v2",
+  "tag_prefix": "claude-v",
+  "client": {
+    "id": "claude-code",
+    "supported_version": null,
+    "acceptance": "NOT_ACCEPTED"
+  },
+  "paths": {
+    "install_root": ".claude",
+    "hot_source": "CLAUDE.md",
+    "hot_destination": ".claude/CLAUDE.md",
+    "config_source": "runtime/settings.json",
+    "config_destination": ".claude/settings.json"
+  },
+  "environment": {
+    "scope": "current-user",
+    "set": []
+  }
+}

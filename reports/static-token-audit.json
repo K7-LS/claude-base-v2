@@ -1,0 +1,71 @@
+{
+  "candidate": {
+    "cold_payload_in_startup": false,
+    "estimated_tokens": 4007,
+    "surfaces": {
+      "agents_discovery": {
+        "bytes": 3177,
+        "count": 16,
+        "logical_root": "~/.claude/agents",
+        "sha256": "e71ce09d20eef3d4340a3e11dee0c9b9316539a3ec6b748b6c3c7b96baefd509"
+      },
+      "hot": {
+        "bytes": 2988,
+        "logical_path": "~/.claude/CLAUDE.md",
+        "sha256": "fe9ae59c1d9aff56103961eb9c5e75e247e86e510ef85460d06805840e0f7c25"
+      },
+      "skills_discovery": {
+        "bytes": 5855,
+        "capability_skills": 37,
+        "control_skills": 1,
+        "count": 38,
+        "logical_root": "~/.claude/skills",
+        "sha256": "0fad0145e690cb31154c12128245dcc3efec9706553d4b018bf34476d6110ba5"
+      }
+    },
+    "total_bytes": 12020
+  },
+  "legacy": {
+    "captured_at": "2026-07-26",
+    "estimated_tokens": 24026,
+    "method": "UTF-8 bytes for global AGENTS.md plus canonical name|description|installed-path discovery rows; token estimate is ceil(bytes/3)",
+    "schema_version": 1,
+    "source": "read-only current hub surfaces",
+    "surfaces": {
+      "agents_discovery": {
+        "bytes": 43425,
+        "count": 16,
+        "logical_root": "~/.codex/agents",
+        "sha256": "f2382ece0a6318106bed968e4fcb577d2469a61b9aa21587719672d6c17e15b2"
+      },
+      "hot": {
+        "bytes": 19409,
+        "logical_path": "~/.codex/AGENTS.md",
+        "sha256": "60966a9e6930c62151b0badf1a4c2a011f9e2caec4c69f02c7b0277df14354c7"
+      },
+      "skills_discovery": {
+        "bytes": 9243,
+        "count": 45,
+        "logical_root": "~/.agents/skills",
+        "sha256": "7d65911c3d9624d1be1af2a48f119a15392695c04cea8ea76de9c3ea6ea4f847"
+      }
+    },
+    "total_bytes": 72077
+  },
+  "limitations": [
+    "Static tokens are a conservative UTF-8 byte estimate, not provider billing.",
+    "Matched A/B requires owner approval and identical client, model, reasoning and prompts."
+  ],
+  "method": "UTF-8 bytes for global AGENTS.md plus canonical name|description|installed-path discovery rows; token estimate is ceil(bytes/3)",
+  "results": {
+    "MATCHED_AB": "NOT_RUN",
+    "STATIC_TOKEN_ACCEPTANCE": "PASS",
+    "base_controlled_startup_reduction": 0.8332339026319076
+  },
+  "schema_version": 1,
+  "target": "claude",
+  "thresholds": {
+    "base_controlled_startup_reduction_min": 0.7,
+    "matched_ab_total_input_reduction_min": 0.25
+  }
+}

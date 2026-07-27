@@ -1,14 +1,15 @@
 {
   "schema_version": 1,
   "target": "claude",
-  "TARGET_IMPLEMENTATION": "NOT_STARTED",
+  "TARGET_IMPLEMENTATION": "IN_PROGRESS",
   "POLICY_AUDIT": "NOT_RUN",
   "CLAUDE_CANARY": "NOT_RUN",
   "FULL_RELEASE_CLAUDE": "NOT_PASS",
   "PROGRAM_RELEASE": "0/3",
   "blocked_by": [
     "FULL_RELEASE_CODEX is not PASS",
-    "native Claude runtime design is not implemented",
-    "separate Anthropic policy audit is not run"
+    "native package build and Foundation fake-home acceptance are not implemented",
+    "separate Anthropic policy audit is not run",
+    "Claude Code is not installed on the current hub, so live canary is not available"
   ]
 }
