@@ -3,28 +3,28 @@
   "target": "claude",
   "replace_files": [
     ".claude/CLAUDE.md",
-    ".claude/settings.json",
     ".claude/base/VERSION",
-    ".claude/base/components.lock.json"
+    ".claude/base/components.lock.json",
+    ".claude/settings.json"
   ],
   "exact_directories": [
     ".claude/agents",
-    ".claude/skills",
-    ".claude/commands",
     ".claude/base/cold",
     ".claude/base/foundation",
-    ".claude/base/runtime"
+    ".claude/base/runtime",
+    ".claude/commands",
+    ".claude/skills"
   ],
   "preserved_paths": [
     ".claude.json",
-    ".claude/projects",
-    ".claude/history.jsonl",
-    ".claude/file-history",
-    ".claude/plugins",
-    ".claude/plans",
-    ".claude/tasks",
     ".claude/backups",
     ".claude/base/state",
+    ".claude/file-history",
+    ".claude/history.jsonl",
+    ".claude/plans",
+    ".claude/plugins",
+    ".claude/projects",
+    ".claude/tasks",
     "projects"
   ]
 }
