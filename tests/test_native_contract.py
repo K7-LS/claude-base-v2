@@ -163,6 +163,30 @@ def test_claude_release_status_stays_fail_closed_before_canary():
     assert status["FULL_RELEASE_CLAUDE"] == "NOT_PASS"
 
 
+def test_claude_policy_audit_blocks_unsupported_region_release():
+    status = json.loads((ROOT / "STATUS.json").read_text(encoding="utf-8"))
+    assert status["POLICY_AUDIT"] == "BLOCKED_REGION_VERIFICATION"
+    assert any(
+        "supported region" in blocker.lower()
+        for blocker in status["blocked_by"]
+    )
+
+    audit_path = ROOT / "docs" / "ANTHROPIC-POLICY-AUDIT.md"
+    audit = audit_path.read_text(encoding="utf-8").lower()
+    for official_url in (
+        "https://www.anthropic.com/legal/aup",
+        "https://www.anthropic.com/legal/consumer-terms",
+        "https://www.anthropic.com/supported-countries",
+        "https://support.claude.com/en/articles/8241253-safeguards-warnings-and-appeals",
+    ):
+        assert official_url in audit
+    assert "russia is not listed" in audit
+    assert "russian-language construction documents are not prohibited" in audit
+    assert "one eligible account per employee" in audit
+    assert "must not be used to bypass" in audit
+    assert "exact suspension reason" in audit
+
+
 def test_claude_static_token_budget_passes_without_claiming_live_ab():
     path = ROOT / "tools" / "token_audit.py"
     spec = importlib.util.spec_from_file_location("claude_token_audit", path)

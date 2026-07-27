@@ -3,14 +3,14 @@
   "target": "claude",
   "TARGET_IMPLEMENTATION": "IN_PROGRESS",
   "OFFLINE_FOUNDATION_INTEGRATION": "PASS",
-  "POLICY_AUDIT": "NOT_RUN",
+  "POLICY_AUDIT": "BLOCKED_REGION_VERIFICATION",
   "CLAUDE_CANARY": "NOT_RUN",
   "FULL_RELEASE_CLAUDE": "NOT_PASS",
   "PROGRAM_RELEASE": "0/3",
   "blocked_by": [
     "FULL_RELEASE_CODEX is not PASS",
     "the exact supported Claude Code version is not accepted",
-    "separate Anthropic policy audit is not run",
+    "each employee account and physical location must be verified against Anthropic's current Supported Regions Policy; Russia is not listed",
     "Claude Code is not installed on the current hub, so live canary is not available"
   ]
 }

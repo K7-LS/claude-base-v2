@@ -31,9 +31,15 @@ has not run.
 Current verdict: `FULL_RELEASE_CLAUDE: NOT_PASS`.
 
 Repository separation is not evidence for or against any prior Anthropic
-account action. The exact supported Claude Code version, real Foundation
-fake-home acceptance, independent policy audit, and live Claude canary remain
-required before release.
+account action. The policy audit found no language-based prohibition on
+Russian construction documents, but Russia is absent from Anthropic's current
+supported-region lists. Employee account and physical-location eligibility
+must therefore be resolved before release; VPN or proxy transport cannot be
+used to bypass that restriction. See
+[`docs/ANTHROPIC-POLICY-AUDIT.md`](docs/ANTHROPIC-POLICY-AUDIT.md).
+
+The exact supported Claude Code version, employee eligibility evidence, real
+client acceptance, and a live Claude canary remain required before release.
 
 ## Offline integration acceptance
 
