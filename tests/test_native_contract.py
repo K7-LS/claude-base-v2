@@ -143,6 +143,17 @@ def test_claude_runtime_does_not_upload_or_overwrite_client_state():
         "version": "2.1.218",
     }
     assert client_evidence["binary"]["authenticode_status"] == "Valid"
+    assert client_evidence["distribution"] == {
+        "method": "official-binary",
+        "package_id": "win32-x64/claude.exe",
+        "package_version": "2.1.218",
+        "scope": "current-user",
+        "source": "https://downloads.claude.ai/claude-code-releases/2.1.218/win32-x64/claude.exe",
+    }
+    assert client_evidence["binary"]["sha256"] == (
+        "81fcf59bb7abb558aedc6f2361f4723b3d757d28e799962d88b18b4520df66ca"
+    )
+    assert client_evidence["binary"]["signer"] == "Anthropic, PBC"
     assert client_evidence["runtime_smoke"]["model_requests"] == 0
     assert release["environment"] == {"scope": "current-user", "set": []}
     connection = ROOT / "runtime" / "connection.ps1"

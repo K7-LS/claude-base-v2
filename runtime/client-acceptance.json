@@ -7,11 +7,11 @@
     "version": "2.1.218"
   },
   "distribution": {
-    "method": "winget",
-    "package_id": "Anthropic.ClaudeCode",
+    "method": "official-binary",
+    "package_id": "win32-x64/claude.exe",
     "package_version": "2.1.218",
     "scope": "current-user",
-    "source": "https://github.com/microsoft/winget-pkgs"
+    "source": "https://downloads.claude.ai/claude-code-releases/2.1.218/win32-x64/claude.exe"
   },
   "binary": {
     "sha256": "81fcf59bb7abb558aedc6f2361f4723b3d757d28e799962d88b18b4520df66ca",

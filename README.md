@@ -32,16 +32,19 @@ Current verdict: `FULL_RELEASE_CLAUDE: NOT_PASS`.
 
 Repository separation is not evidence for or against any prior Anthropic
 account action. The policy audit found no language-based prohibition on
-Russian construction documents, but Russia is absent from Anthropic's current
-supported-region lists. Employee account and physical-location eligibility
-must therefore be resolved before release; VPN or proxy transport cannot be
-used to bypass that restriction. See
+Russian construction documents. Employee and organization eligibility must
+still be verified against Anthropic's current supported-region rules before
+each release; VPN or proxy transport cannot be used to bypass a region,
+account, or safeguard restriction. See
 [`docs/ANTHROPIC-POLICY-AUDIT.md`](docs/ANTHROPIC-POLICY-AUDIT.md).
 
-Claude Code `2.1.218` is pinned after an exact WinGet install, valid
-Authenticode verification, and zero-model `--version`/`--help` smoke. This is
-only `CLIENT_BINARY_ACCEPTANCE: PASS`; employee eligibility, provider login,
-model runtime, and the reversible live base canary remain required.
+Claude Code `2.1.218` is pinned to the official
+`win32-x64/claude.exe` binary with SHA-256
+`81fcf59bb7abb558aedc6f2361f4723b3d757d28e799962d88b18b4520df66ca`,
+valid Authenticode signer `Anthropic, PBC`, and zero-model
+`--version`/`--help` smoke. WinGet is not part of this acceptance path. This
+is only `CLIENT_BINARY_ACCEPTANCE: PASS`; employee eligibility, provider
+login, model runtime, and the reversible live base canary remain required.
 
 ## Offline candidate acceptance
 
@@ -60,3 +63,35 @@ py -3.12 .\tools\run_offline_acceptance.py `
 This proves deterministic candidate packaging and fake-home preservation, but
 it remains non-releasable and can never create `package-acceptance.json` or
 replace the Claude live/provider canaries.
+
+## Controlled release
+
+All online entry points are dry-run by default. The one approved no-tools
+provider marker requires PII-free eligibility evidence no older than seven
+days; the live canary uses an isolated home and performs no model request.
+
+```powershell
+py -3.12 .\tools\provider_marker.py
+py -3.12 .\tools\live_canary.py
+```
+
+After the explicitly approved executions pass, compose final evidence and
+promote the already accepted candidate ZIP without rebuilding it:
+
+```powershell
+py -3.12 .\tools\final_evidence.py `
+  --candidate-evidence .\dist\candidate-0.1.0\candidate-acceptance.json `
+  --provider-marker-evidence <provider-marker.json> `
+  --canary-evidence <claude-canary.json> `
+  --output <claude-final-evidence.json>
+
+py -3.12 .\tools\promote_candidate.py `
+  --candidate .\dist\candidate-0.1.0 `
+  --final-evidence <claude-final-evidence.json> `
+  --output .\dist\stable-0.1.0
+```
+
+After immutable GitHub publication, `release_verifier.py` runs
+`gh release verify` and `gh release verify-asset`. Only then may
+`create_package_acceptance.py` produce the local record consumed by the
+employee installer.

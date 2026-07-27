@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "target": "claude",
+  "recorded_at_utc": "YYYY-MM-DDTHH:MM:SSZ",
+  "owner_attestation": {
+    "confirmed_employee": true,
+    "physical_location_supported": true,
+    "account_region_supported": true,
+    "no_vpn_or_proxy_region_bypass": true,
+    "consumer_terms_accepted": true
+  },
+  "privacy": {
+    "employee_name_included": false,
+    "country_included": false,
+    "account_identifier_included": false,
+    "credentials_included": false
+  },
+  "evidence_body_sha256": "GENERATE_WITH_TOOLS_PROVIDER_MARKER"
+}
