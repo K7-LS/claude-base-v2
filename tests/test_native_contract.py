@@ -84,6 +84,24 @@ def test_claude_has_exact_native_agent_and_skill_catalogs():
     assert all((ROOT / row["source"]).is_file() for row in catalog)
 
 
+def test_claude_migration_provenance_names_every_ported_component():
+    migration = json.loads(
+        (ROOT / "MIGRATION-SOURCE.json").read_text(encoding="utf-8")
+    )
+    inventory = migration["inventory"]
+    assert set(inventory["agents"]) == EXPECTED_AGENTS
+    assert set(inventory["skills"]) == {
+        path.parent.name
+        for path in (ROOT / "skills").glob("*/SKILL.md")
+    }
+    assert len(inventory["cold"]) == 22
+    assert all((ROOT / "cold" / path).is_file() for path in inventory["cold"])
+    assert set(inventory["commands"]) == {
+        path.stem for path in (ROOT / "commands").glob("*.md")
+    }
+    assert inventory["control_skills"] == ["sync-base"]
+
+
 def test_claude_runtime_does_not_upload_or_overwrite_client_state():
     settings = json.loads((ROOT / "runtime" / "settings.json").read_text("utf-8"))
     assert settings["autoMemoryEnabled"] is False
