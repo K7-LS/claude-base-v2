@@ -6,8 +6,8 @@
   "tag_prefix": "claude-v",
   "client": {
     "id": "claude-code",
-    "supported_version": null,
-    "acceptance": "NOT_ACCEPTED"
+    "supported_version": "2.1.218",
+    "acceptance": "PASS"
   },
   "paths": {
     "install_root": ".claude",

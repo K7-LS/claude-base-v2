@@ -4,13 +4,14 @@
   "TARGET_IMPLEMENTATION": "IN_PROGRESS",
   "OFFLINE_FOUNDATION_INTEGRATION": "PASS",
   "POLICY_AUDIT": "BLOCKED_REGION_VERIFICATION",
+  "CLIENT_BINARY_ACCEPTANCE": "PASS",
   "CLAUDE_CANARY": "NOT_RUN",
   "FULL_RELEASE_CLAUDE": "NOT_PASS",
   "PROGRAM_RELEASE": "0/3",
   "blocked_by": [
     "FULL_RELEASE_CODEX is not PASS",
-    "the exact supported Claude Code version is not accepted",
     "each employee account and physical location must be verified against Anthropic's current Supported Regions Policy; Russia is not listed",
-    "Claude Code is not installed on the current hub, so live canary is not available"
+    "the zero-model live base canary for Claude Code 2.1.218 has not run",
+    "provider login and model runtime are not authorized or accepted"
   ]
 }

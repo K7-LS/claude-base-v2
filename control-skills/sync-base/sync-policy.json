@@ -11,8 +11,8 @@
       "claude",
       "--version"
     ],
-    "acceptance": "NOT_ACCEPTED",
-    "version_pattern": null
+    "acceptance": "PASS",
+    "version_pattern": "(?<version>2\\.1\\.218)"
   },
   "evidence": {
     "style": "verdicts",

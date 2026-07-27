@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "target": "claude",
+  "verdict": "PASS",
+  "client": {
+    "id": "claude-code",
+    "version": "2.1.218"
+  },
+  "distribution": {
+    "method": "winget",
+    "package_id": "Anthropic.ClaudeCode",
+    "package_version": "2.1.218",
+    "scope": "current-user",
+    "source": "https://github.com/microsoft/winget-pkgs"
+  },
+  "binary": {
+    "sha256": "81fcf59bb7abb558aedc6f2361f4723b3d757d28e799962d88b18b4520df66ca",
+    "bytes": 263931552,
+    "authenticode_status": "Valid",
+    "signer": "Anthropic, PBC",
+    "issuer": "DigiCert Trusted G4 Code Signing RSA4096 SHA384 2021 CA1",
+    "timestamped": true
+  },
+  "runtime_smoke": {
+    "version_command": [
+      "claude",
+      "--version"
+    ],
+    "version_output": "2.1.218 (Claude Code)",
+    "version_exit_code": 0,
+    "help_exit_code": 0,
+    "model_requests": 0,
+    "provider_login": "NOT_RUN"
+  },
+  "limitations": [
+    "This accepts only the exact client binary and zero-model CLI smoke.",
+    "It does not prove provider account, region, model, or base canary eligibility."
+  ]
+}
