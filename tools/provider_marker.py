@@ -85,6 +85,7 @@ def build_command(*, claude: str, empty_mcp_config: Path) -> list[str]:
         claude,
         "-p",
         PROMPT,
+        "--safe-mode",
         "--output-format",
         "json",
         "--tools",
