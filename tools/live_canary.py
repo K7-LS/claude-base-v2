@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -158,6 +159,17 @@ def _write_new(path: Path, value: object) -> None:
     os.replace(temporary, path)
 
 
+@contextmanager
+def canary_workspace(output: Path):
+    parent = output.resolve().parent
+    parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(
+        prefix="claude-live-canary-",
+        dir=parent,
+    ) as raw:
+        yield Path(raw)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--execute-approved-live-canary", action="store_true")
@@ -205,7 +217,8 @@ def main() -> int:
         or version.stdout.strip() != CLIENT_VERSION_OUTPUT
     ):
         raise SystemExit(f"Claude Code must be exactly {CLIENT_VERSION}")
-    with tempfile.TemporaryDirectory(prefix="claude-live-canary-") as raw:
+    output = arguments.output.resolve()
+    with canary_workspace(output) as temporary_root:
         lifecycle = offline_runner._run_matrix_case(
             executable=arguments.powershell,
             foundation_script=foundation,
@@ -213,7 +226,7 @@ def main() -> int:
             target=TARGET,
             client_id=CLIENT_ID,
             client_version=CLIENT_VERSION,
-            root=Path(raw),
+            root=temporary_root,
         )
     evidence = build_canary_evidence(
         release_binding=binding,
@@ -221,8 +234,8 @@ def main() -> int:
         lifecycle=lifecycle,
         component_counts=counts,
     )
-    _write_new(arguments.output.resolve(), evidence)
-    print(json.dumps({CANARY_GATE: "PASS", "output": str(arguments.output.resolve())}))
+    _write_new(output, evidence)
+    print(json.dumps({CANARY_GATE: "PASS", "output": str(output)}))
     return 0
 
 

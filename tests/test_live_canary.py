@@ -80,3 +80,14 @@ def test_live_canary_evidence_rejects_failed_preservation():
                 "control_skills": 1,
             },
         )
+
+
+def test_live_canary_workspace_is_local_to_evidence_output(tmp_path):
+    output = tmp_path / "evidence" / "claude-live-canary.json"
+
+    with canary.canary_workspace(output) as workspace:
+        assert workspace.is_dir()
+        assert workspace.parent == output.parent.resolve()
+        assert workspace.name.startswith("claude-live-canary-")
+
+    assert not workspace.exists()
