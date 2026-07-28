@@ -5,6 +5,7 @@ import json
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -116,3 +117,104 @@ def test_marker_summary_contains_hash_usage_and_no_response_or_identity():
     assert "result" not in evidence
     assert "session_id" not in json.dumps(evidence)
     assert marker.EXPECTED_RESPONSE not in json.dumps(evidence)
+
+
+def test_failed_marker_writes_hash_only_privacy_safe_evidence():
+    eligibility = _eligibility("2026-07-26T12:00:00Z")
+    stdout = json.dumps(
+        {
+            "type": "result",
+            "subtype": "error_during_execution",
+            "is_error": True,
+            "result": "sensitive provider response",
+            "session_id": "sensitive-session-id",
+        }
+    )
+    stderr = "sensitive local error"
+
+    evidence = marker.summarize_failure(
+        returncode=1,
+        stdout=stdout,
+        stderr=stderr,
+        eligibility=eligibility,
+        client_version="2.1.218",
+    )
+
+    assert evidence["CLAUDE_PROVIDER_MARKER"] == "NOT_PASS"
+    assert evidence["calls_started"] == 1
+    assert evidence["calls_completed"] == 0
+    assert evidence["failure"] == {
+        "exit_code": 1,
+        "result_type": "result",
+        "result_subtype": "error_during_execution",
+        "is_error": True,
+        "stdout_sha256": (
+            "5f7ea02afe0885df41a59d935518b5a5d88ccae8c05e5805fbe0381acf23d963"
+        ),
+        "stderr_sha256": (
+            "35fdc1257db53729525384768f810ee22740925c514a8aeb3a18f235dad15033"
+        ),
+    }
+    serialized = json.dumps(evidence)
+    assert "sensitive provider response" not in serialized
+    assert "sensitive-session-id" not in serialized
+    assert "sensitive local error" not in serialized
+    assert evidence["privacy"] == {
+        "credentials_included": False,
+        "personal_data_included": False,
+        "prompt_text_included": False,
+        "response_text_included": False,
+        "session_identifier_included": False,
+        "failure_text_included": False,
+    }
+
+
+def test_failed_marker_process_persists_not_pass_evidence(
+    monkeypatch, tmp_path
+):
+    eligibility_path = tmp_path / "eligibility.json"
+    eligibility_path.write_text(
+        json.dumps(_eligibility("2026-07-26T12:00:00Z")),
+        encoding="utf-8",
+    )
+    output = tmp_path / "marker.json"
+    results = iter(
+        (
+            SimpleNamespace(
+                returncode=0,
+                stdout="2.1.218 (Claude Code)\n",
+                stderr="",
+            ),
+            SimpleNamespace(
+                returncode=1,
+                stdout='{"type":"result","subtype":"error_during_execution"}',
+                stderr="sensitive provider failure",
+            ),
+        )
+    )
+
+    monkeypatch.setattr(
+        marker.subprocess,
+        "run",
+        lambda *arguments, **keywords: next(results),
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "provider_marker.py",
+            "--execute-approved-marker",
+            "--eligibility",
+            str(eligibility_path),
+            "--claude",
+            "claude",
+            "--output",
+            str(output),
+        ],
+    )
+
+    assert marker.main() == 1
+    evidence = json.loads(output.read_text(encoding="utf-8"))
+    assert evidence["CLAUDE_PROVIDER_MARKER"] == "NOT_PASS"
+    assert evidence["failure"]["exit_code"] == 1
+    assert "sensitive provider failure" not in json.dumps(evidence)
