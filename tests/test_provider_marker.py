@@ -75,6 +75,7 @@ def test_marker_command_disables_tools_and_session_persistence(tmp_path: Path):
         command.index("--tools") : command.index("--tools") + 2
     ]
     for flag in (
+        "--safe-mode",
         "--disable-slash-commands",
         "--strict-mcp-config",
         "--no-session-persistence",
