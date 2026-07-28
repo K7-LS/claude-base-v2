@@ -16,6 +16,8 @@ PROMPT = "Ответь ровно: CLAUDE_BASE_CANARY_OK"
 EXPECTED_RESPONSE = "CLAUDE_BASE_CANARY_OK"
 SUPPORTED_REGIONS_URL = "https://www.anthropic.com/supported-countries"
 CONSUMER_TERMS_URL = "https://www.anthropic.com/legal/consumer-terms"
+SAFE_FAILURE_TYPES = {"error", "result"}
+SAFE_FAILURE_SUBTYPES = {"error_during_execution"}
 
 
 def _json_bytes(value: object) -> bytes:
@@ -165,6 +167,79 @@ def summarize_marker(
     return evidence
 
 
+def summarize_failure(
+    *,
+    returncode: int,
+    stdout: str,
+    stderr: str,
+    eligibility: dict[str, Any],
+    client_version: str,
+) -> dict[str, Any]:
+    eligibility_sha256 = validate_eligibility(eligibility)
+    try:
+        payload = json.loads(stdout)
+    except json.JSONDecodeError:
+        payload = {}
+    if not isinstance(payload, dict):
+        payload = {}
+    result_type = payload.get("type")
+    result_subtype = payload.get("subtype")
+    is_error = payload.get("is_error")
+    evidence: dict[str, Any] = {
+        "schema_version": 1,
+        "target": "claude",
+        "generated_at_utc": datetime.now(timezone.utc)
+        .replace(microsecond=0)
+        .isoformat()
+        .replace("+00:00", "Z"),
+        "client": {
+            "id": "claude-code",
+            "version": client_version,
+        },
+        "provider": "anthropic",
+        "model": "sonnet",
+        "effort": "low",
+        "tools": "disabled",
+        "session_persistence": False,
+        "calls_authorized": 1,
+        "calls_started": 1,
+        "calls_completed": 0,
+        "eligibility": {
+            "sha256": eligibility_sha256,
+            "max_age_days": 7,
+            "supported_regions_source": SUPPORTED_REGIONS_URL,
+            "consumer_terms_source": CONSUMER_TERMS_URL,
+        },
+        "failure": {
+            "exit_code": returncode,
+            "result_type": (
+                result_type
+                if result_type in SAFE_FAILURE_TYPES
+                else "unrecognized"
+            ),
+            "result_subtype": (
+                result_subtype
+                if result_subtype in SAFE_FAILURE_SUBTYPES
+                else "unrecognized"
+            ),
+            "is_error": is_error if isinstance(is_error, bool) else None,
+            "stdout_sha256": hashlib.sha256(stdout.encode("utf-8")).hexdigest(),
+            "stderr_sha256": hashlib.sha256(stderr.encode("utf-8")).hexdigest(),
+        },
+        "privacy": {
+            "credentials_included": False,
+            "personal_data_included": False,
+            "prompt_text_included": False,
+            "response_text_included": False,
+            "session_identifier_included": False,
+            "failure_text_included": False,
+        },
+        "CLAUDE_PROVIDER_MARKER": "NOT_PASS",
+    }
+    evidence["evidence_body_sha256"] = evidence_body_sha256(evidence)
+    return evidence
+
+
 def _write_new(path: Path, value: object) -> None:
     if path.exists():
         raise RuntimeError(
@@ -249,9 +324,24 @@ def main() -> int:
             timeout=180,
         )
         if result.returncode != 0:
-            raise RuntimeError(
-                "Claude provider marker failed: " + result.stderr[-2000:]
+            failure = summarize_failure(
+                returncode=result.returncode,
+                stdout=result.stdout,
+                stderr=result.stderr,
+                eligibility=eligibility,
+                client_version=SUPPORTED_CLIENT,
             )
+            _write_new(arguments.output.resolve(), failure)
+            print(
+                json.dumps(
+                    {
+                        "CLAUDE_PROVIDER_MARKER": "NOT_PASS",
+                        "output": str(arguments.output.resolve()),
+                    },
+                    sort_keys=True,
+                )
+            )
+            return 1
         try:
             payload = json.loads(result.stdout)
         except json.JSONDecodeError as error:
