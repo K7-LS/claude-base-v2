@@ -329,7 +329,8 @@ NEEDS USER INPUT — нужна версия Revit / уточнение API / т
 4. Цели и верификация (Revit-тест на модели — настоящая верификация).
 5. Помощник, не подхалим (не выдумывать API-сигнатуры; `# TODO verify` лучше угадайки).
 
-Полные формулировки — `~/.claude/CLAUDE.md` и `~/.claude/skills/karpathy-guidelines/SKILL.md`.
+Расширенные поведенческие принципы — в
+`~/.claude/skills/karpathy-guidelines/SKILL.md`.
 
 ## Related
 - [[revit-testbed]] — протокол приёмки сторонних Revit-инструментов (режим приёмки).

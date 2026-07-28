@@ -1,8 +1,7 @@
 # session_start.ps1 - project-memory SessionStart hook (skill project-memory)
 # If cwd (or a parent, up to 12 levels) is a memory project (has Claude\<journal>):
 #   1) prints the top 2 journal entries into session context ("read journal first"),
-#   2) writes a session marker used by session_end.ps1 (Stop) to detect an
-#      "unclosed" session (files changed, journal not updated).
+#   2) writes a small cwd-project cache used by project_context.ps1.
 # Outside memory projects: bootstrap a nearby CLAUDE.md if present, otherwise no-op.
 # NEVER breaks a session (exit 0 always).
 # ASCII-only source on purpose (PowerShell 5.1 / no-BOM robustness).
@@ -28,8 +27,7 @@ try {
   if (-not $stateDir) { $stateDir = Join-Path $HOME '.claude\.local-state\project-memory' }
   New-Item -ItemType Directory -Force -Path $stateDir | Out-Null
 
-  # housekeeping: drop session markers older than 7 days (local state hygiene
-  # only - NOT curation/reminder logic; that logic has no day thresholds)
+  # Housekeeping: drop stale cwd-project cache entries after 7 days.
   Get-ChildItem -LiteralPath $stateDir -Filter 'session_*.json' -EA SilentlyContinue |
     Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-7) } |
     Remove-Item -Force -EA SilentlyContinue
@@ -79,10 +77,8 @@ try {
   if ($sid) {
     $marker = Join-Path $stateDir ("session_" + $sid + ".json")
     $obj = @{
-      start_epoch  = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
       project_root = $root
       journal      = $journal
-      reminded     = $false
     }
     $obj | ConvertTo-Json | Set-Content -LiteralPath $marker -Encoding UTF8
   }
@@ -97,7 +93,7 @@ try {
   }
   $rel = $journal.Substring($root.Length).TrimStart('\','/')
   Write-Output ("[project-memory] Memory project detected (root: " + (Split-Path $root -Leaf) + ").")
-  Write-Output ("Top of the session journal (" + $rel + "); also read Claude\STATUS.md; at session end add your entry ON TOP and update STATUS:")
+  Write-Output ("Top of the session journal (" + $rel + "); also read Claude\STATUS.md. Update portable memory only after a material portable-state change:")
   Write-Output ""
   if ($starts.Count -ge 1) {
     $end = $lines.Count - 1

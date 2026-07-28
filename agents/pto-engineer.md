@@ -307,7 +307,7 @@ fallback на `auditor`/себя пока агент не создан).
 4. Цели и верификация.
 5. Помощник, не подхалим.
 
-Полные формулировки — в `~/.claude/CLAUDE.md` и
+Расширенные поведенческие принципы —
 `~/.claude/skills/karpathy-guidelines/SKILL.md`.
 
 ## Related

@@ -15,8 +15,9 @@ description: Use when нужно проверить поставщика или 
 - **Реальность фирмы / санкции / домен** → через web-инструменты Claude (см. секцию «Веб-доступ» ниже).
 
 ## Веб-доступ
-Канон (лестница exa→firecrawl→fetch→playwright→WebFetch, гео/egress-модель, проверка `%PDF`) —
-[[feedback_web_direct_access]] + CLAUDE.md §«Веб-доступ». Ключевое для due-diligence: росс. госсайты-реестры
+Канон (лестница exa→firecrawl→fetch→playwright→WebFetch, гео/egress-модель,
+проверка `%PDF`) — `web-access` + [[feedback_web_direct_access]]. Ключевое для
+due-diligence: росс. госсайты-реестры
 (ЕГРЮЛ/АРШИН/pub.fsa) при иностранном egress → скилл [[ru-gov-access]] (страницы/PDF); **ДАННЫЕ из API
 реестров = только браузер** (playwright с RU-IP), curl=403 на любом IP.
 

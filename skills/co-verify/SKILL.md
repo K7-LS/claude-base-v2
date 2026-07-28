@@ -60,6 +60,6 @@ PDF, либо сравнить две редакции ПД. Это альтер
   (geo: искать «еверодонецк»/«алашиха» в тексте всех СО-страниц).
 
 ## Связь
-deterministic-first перед Workflow (CLAUDE.md): на матчинге структурированных таблиц
-сначала этот скрипт, а не fan-out LLM. См. `examples/case-vor-co.md`,
+На матчинге структурированных таблиц сначала этот детерминированный скрипт, а
+не fan-out LLM. См. `examples/case-vor-co.md`,
 память `reference_vor_co_coordinate_verification`.

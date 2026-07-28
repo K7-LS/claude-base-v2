@@ -1,7 +1,7 @@
 # project-memory — память проекта (для человека)
 
-Кодификация ручной схемы «папка Claude/ в объекте»: bootstrap одной
-командой + rot-курирование статуса + хуки дисциплины журнала.
+Кодификация переносимой схемы «папка Claude/ в объекте»: bootstrap одной
+командой + rot-курирование статуса + progressive SessionStart-контекст.
 Мультидевайс — Я.Диск: относительные пути, свежесть по mtime, без git;
 откат — из `_backup_<дата>/`.
 
@@ -15,7 +15,7 @@ python "$HOME\.claude\skills\project-memory\tools\bootstrap.py" "Мой объе
 
 ```
 <проект>/CLAUDE.md            # указатель-страховка
-<проект>/Claude/CLAUDE.md     # правила папки, порядок сессии
+<проект>/Claude/CLAUDE.md     # правила переносимой памяти
 <проект>/Claude/README.md     # навигатор
 <проект>/Claude/ЖУРНАЛ СЕССИЙ.md
 <проект>/Claude/STATUS.md
@@ -37,45 +37,23 @@ python "$HOME\.claude\skills\project-memory\tools\curate_rot.py" apply <stamp> -
 Скрипт только ПРЕДЛАГАЕТ (все правки — после вашего/Claude review);
 пустой evidence отбрасывается; авто-apply нет; вне `Claude/` не пишет.
 
-## Установка хуков (один раз, settings.shared.json)
+## Runtime behavior
 
-⚠ В ЛИЧНЫЙ `~/.claude/settings.json` хуки ставить БЕСПОЛЕЗНО: ключ `hooks` —
-strictly-shared, `merge-shared-settings.ps1` перезаписывает его из
-`settings.shared.json` при каждом старте сессии (проверено 2026-07-06).
-
-Единственное рабочее место — `~/.claude/settings.shared.json` (уезжает всем
-ПК команды через auto-pull; вне папок с `Claude/ЖУРНАЛ СЕССИЙ.md` хуки —
-молчаливый no-op). С 2026-07-07 блок УЖЕ добавлен в shared решением владельца —
-ничего ставить не нужно. Сниппет ниже — справочно (структура записей;
-блоки `SessionStart` в конфиге обычно уже есть — ДОБАВЛЯТЬ hooks внутрь
-существующих матчеров, не дублировать):
-
-```json
-"SessionStart": [
-  { "matcher": "startup", "hooks": [
-    { "type": "command",
-      "command": "& \"$HOME\\.claude\\skills\\project-memory\\tools\\hooks\\session_start.ps1\"",
-      "shell": "powershell", "timeout": 10 } ] },
-  { "matcher": "resume", "hooks": [
-    { "type": "command",
-      "command": "& \"$HOME\\.claude\\skills\\project-memory\\tools\\hooks\\session_start.ps1\"",
-      "shell": "powershell", "timeout": 10 } ] }
-],
-"Stop": [
-  { "matcher": "*", "hooks": [
-    { "type": "command",
-      "command": "& \"$HOME\\.claude\\skills\\project-memory\\tools\\hooks\\session_end.ps1\"",
-      "shell": "powershell", "timeout": 20 } ] }
-]
-```
+Employee runtime не устанавливает project-memory hooks: native project
+`CLAUDE.md` остаётся bootstrap-точкой. Опциональный `session_start.ps1`
+может быть добавлен только управляемым релизом конфигурации после решения
+владельца; сам скилл settings не патчит. Stop-hook не устанавливается.
 
 Поведение:
-- вне папок с `Claude/ЖУРНАЛ СЕССИЙ.md` оба хука — молчаливый no-op;
-- SessionStart печатает верхние 2 записи журнала в контекст сессии;
-- Stop напоминает «допиши журнал» максимум ОДИН раз за сессию и только
-  если файлы проекта менялись, а журнал — нет;
-- состояние сессий — `~/.claude/.local-state/project-memory/` (локально,
-  НЕ в Я.Диске; маркеры старше 7 дней чистятся сами).
+- вне папок с `Claude/ЖУРНАЛ СЕССИЙ.md` hook — молчаливый no-op;
+- опциональный SessionStart печатает верхние 2 записи журнала в контекст
+  и сохраняет cwd-project cache для v2;
+- Stop-hook не устанавливается: решение об обновлении STATUS/журнала
+  принимается по материальному изменению переносимого состояния;
+- старый `session_end.ps1` сохранён как silent compatibility no-op и не
+  блокирует завершение;
+- cwd-project cache — `~/.claude/.local-state/project-memory/` (локально,
+  НЕ в Я.Диске; записи старше 7 дней чистятся сами).
 
 ## Тесты
 

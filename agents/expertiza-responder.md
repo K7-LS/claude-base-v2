@@ -372,7 +372,7 @@ artifact → orchestrator → reviewer → user. **Прямая выдача а�
    игнорировать спорные замечания; каждое замечание обоснованно
    разбирается).
 
-Полные формулировки — `~/.claude/CLAUDE.md` и
+Расширенные поведенческие принципы —
 `~/.claude/skills/karpathy-guidelines/SKILL.md`.
 
 ## Related

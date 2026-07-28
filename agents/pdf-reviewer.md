@@ -240,7 +240,8 @@ print(f"PDF version: {reader.pdf_header}")
 4. Цели и верификация.
 5. Помощник, не подхалим.
 
-Полные формулировки — в `~/.claude/CLAUDE.md` и `~/.claude/skills/karpathy-guidelines/SKILL.md`.
+Расширенные поведенческие принципы — в
+`~/.claude/skills/karpathy-guidelines/SKILL.md`.
 
 ---
 

@@ -368,7 +368,7 @@ NEEDS USER INPUT — есть открытые вопросы (см. ниже).
 4. Цели и верификация.
 5. Помощник, не подхалим.
 
-Полные формулировки — `~/.claude/CLAUDE.md` и
+Расширенные поведенческие принципы —
 `~/.claude/skills/karpathy-guidelines/SKILL.md`.
 
 ## Related

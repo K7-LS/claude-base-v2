@@ -88,4 +88,4 @@ mcp-manifest и личный free-ключ.
 
 ## Связи
 [[feedback_web_direct_access]] (ШАГ −1, гео-модель 3 состояний), `session-reports/2026-06-22_web-access-survey/`
-(полный каталог), CLAUDE.md §«Веб-доступ — лестница» (гео-разрез).
+(полный каталог), `web-access` (общая лестница).

@@ -24,9 +24,11 @@ pinned Foundation engine before `plan/install/doctor`; failed doctor triggers
 rollback. Feedback, telemetry, session uploads, credentials, and local changes
 never flow back to the hub.
 
-Static startup/discovery estimation is 4,007 tokens versus the 24,026-token
-legacy baseline, an 83.32% reduction. This is not provider billing; matched A/B
-has not run.
+Static startup/discovery estimation is 3,582 tokens versus the 24,026-token
+legacy baseline, an 85.09% reduction. The 1,714-byte HOT layer follows the
+progressive context design in
+[`docs/plans/2026-07-28-claude-5-context-design.md`](docs/plans/2026-07-28-claude-5-context-design.md).
+These are not provider-billing results; matched A/B has not run.
 
 Current verdict: `FULL_RELEASE_CLAUDE: NOT_PASS`.
 

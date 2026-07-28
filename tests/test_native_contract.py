@@ -6,6 +6,7 @@ import os
 import re
 import shutil
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
@@ -48,14 +49,50 @@ def _scalar(frontmatter: str, key: str) -> str:
 
 def test_claude_hot_layer_is_native_compact_and_one_way():
     hot = (ROOT / "CLAUDE.md").read_text(encoding="utf-8")
-    assert len(hot.encode("utf-8")) <= 4500
+    assert len(hot.encode("utf-8")) <= 2000
     assert "@~/" not in hot
     assert "@AGENTS.md" not in hot
     assert ".codex" not in hot.lower()
     assert "auto-push" not in hot.lower()
     assert "feedback" not in hot.lower()
     assert "простой разговор" in hot.lower()
-    assert "plan mode" in hot.lower()
+
+
+def test_claude_active_docs_have_no_stale_global_claude_references():
+    stale_references = []
+    patterns = (
+        re.compile(
+            r"полные формулировки.{0,160}?CLAUDE\.md",
+            re.IGNORECASE | re.DOTALL,
+        ),
+        re.compile(r"CLAUDE\.md\s+§", re.IGNORECASE),
+        re.compile(r"CLAUDE\.md\s+п\.\s*\d", re.IGNORECASE),
+        re.compile(r"CLAUDE\.md\s+правило\s*#?\d", re.IGNORECASE),
+        re.compile(r"CLAUDE\.md\s*#\d", re.IGNORECASE),
+        re.compile(
+            r"(?:STOP-процедур\w*|правил\w*|токен-дисциплин\w*)"
+            r"[^.\n]{0,100}CLAUDE\.md",
+            re.IGNORECASE,
+        ),
+        re.compile(
+            r"CLAUDE\.md[^.\n]{0,100}"
+            r"(?:MCP-роутинг|STOP-процедур|токен-дисциплин)",
+            re.IGNORECASE,
+        ),
+        re.compile(r"\(CLAUDE\.md\)", re.IGNORECASE),
+        re.compile(r"CLAUDE-core", re.IGNORECASE),
+    )
+    paths = sorted(
+        path
+        for root in (ROOT / "agents", ROOT / "skills")
+        for path in root.rglob("*")
+        if path.is_file() and path.suffix.lower() in {".md", ".py", ".ps1", ".txt"}
+    )
+    for path in paths:
+        text = path.read_text(encoding="utf-8")
+        if any(pattern.search(text) for pattern in patterns):
+            stale_references.append(path.relative_to(ROOT).as_posix())
+    assert stale_references == []
 
 
 def test_claude_has_exact_native_agent_and_skill_catalogs():
@@ -219,7 +256,7 @@ def test_claude_static_token_budget_passes_without_claiming_live_ab():
 
     report = module.audit_static_context(ROOT, "claude")
     assert report["results"]["STATIC_TOKEN_ACCEPTANCE"] == "PASS"
-    assert report["results"]["base_controlled_startup_reduction"] >= 0.70
+    assert report["results"]["base_controlled_startup_reduction"] >= 0.85
     assert report["results"]["MATCHED_AB"] == "NOT_RUN"
     assert report["candidate"]["cold_payload_in_startup"] is False
     assert report["candidate"]["surfaces"]["agents_discovery"]["count"] == 16
@@ -317,3 +354,140 @@ def test_claude_session_hook_is_silent_without_an_installed_base(
     )
     assert result.returncode == 0
     assert not (result.stdout + result.stderr).strip()
+
+
+@pytest.mark.parametrize(
+    "executable",
+    [
+        value
+        for value in (
+            shutil.which("pwsh"),
+            shutil.which("powershell.exe"),
+        )
+        if value
+    ],
+)
+def test_project_memory_legacy_stop_hook_never_blocks_session(
+    executable, tmp_path
+):
+    project = tmp_path / "project"
+    journal = project / "Claude" / "ЖУРНАЛ СЕССИЙ.md"
+    journal.parent.mkdir(parents=True)
+    journal.write_text("# journal\n", encoding="utf-8")
+    start_epoch = int((time.time() - 10) * 1000)
+    os.utime(journal, ((start_epoch / 1000) - 10,) * 2)
+    (project / "changed.txt").write_text("changed\n", encoding="utf-8")
+
+    state = tmp_path / "state"
+    state.mkdir()
+    marker = {
+        "session_id": "test-session",
+        "start_epoch": start_epoch,
+        "project_root": str(project),
+        "journal": str(journal),
+        "reminded": False,
+    }
+    (state / "session_test-session.json").write_text(
+        json.dumps(marker),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            executable,
+            "-NoProfile",
+            "-File",
+            str(
+                ROOT
+                / "skills"
+                / "project-memory"
+                / "tools"
+                / "hooks"
+                / "session_end.ps1"
+            ),
+        ],
+        input=json.dumps(
+            {
+                "session_id": "test-session",
+                "stop_hook_active": False,
+            }
+        ),
+        env={
+            **os.environ,
+            "PROJECT_MEMORY_STATE_DIR": str(state),
+        },
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
+        timeout=30,
+    )
+    assert result.returncode == 0
+    assert not (result.stdout + result.stderr).strip()
+
+
+@pytest.mark.parametrize(
+    "executable",
+    [
+        value
+        for value in (
+            shutil.which("pwsh"),
+            shutil.which("powershell.exe"),
+        )
+        if value
+    ],
+)
+def test_project_memory_session_start_keeps_cache_without_forcing_log(
+    executable, tmp_path
+):
+    project = tmp_path / "project"
+    journal = project / "Claude" / "ЖУРНАЛ СЕССИЙ.md"
+    journal.parent.mkdir(parents=True)
+    journal.write_text(
+        "# journal\n\n## 2026-07-28 · TEST · context\n\nState changed.\n",
+        encoding="utf-8",
+    )
+
+    state = tmp_path / "state"
+    result = subprocess.run(
+        [
+            executable,
+            "-NoProfile",
+            "-File",
+            str(
+                ROOT
+                / "skills"
+                / "project-memory"
+                / "tools"
+                / "hooks"
+                / "session_start.ps1"
+            ),
+        ],
+        input=json.dumps(
+            {
+                "session_id": "test-session",
+                "cwd": str(project),
+            }
+        ),
+        env={
+            **os.environ,
+            "PROJECT_MEMORY_STATE_DIR": str(state),
+        },
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
+        timeout=30,
+    )
+
+    assert result.returncode == 0
+    output = result.stdout + result.stderr
+    assert "material portable-state change" in output
+    assert "at session end add your entry" not in output
+    marker = json.loads(
+        (state / "session_test-session.json").read_text(encoding="utf-8-sig")
+    )
+    assert marker == {
+        "journal": str(journal),
+        "project_root": str(project),
+    }

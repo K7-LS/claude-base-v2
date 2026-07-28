@@ -411,7 +411,7 @@ rd-coordinator **сам ревьюер** (read-only, не пишет артеф�
 5. Помощник, не подхалим (особенно — не писать «всё согласовано»
    из вежливости; failure-mode строгий).
 
-Полные формулировки — `~/.claude/CLAUDE.md` и
+Расширенные поведенческие принципы —
 `~/.claude/skills/karpathy-guidelines/SKILL.md`.
 
 ## Related
