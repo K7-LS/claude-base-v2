@@ -17,7 +17,7 @@ EXPECTED_RESPONSE = "CLAUDE_BASE_CANARY_OK"
 SUPPORTED_REGIONS_URL = "https://www.anthropic.com/supported-countries"
 CONSUMER_TERMS_URL = "https://www.anthropic.com/legal/consumer-terms"
 SAFE_FAILURE_TYPES = {"error", "result"}
-SAFE_FAILURE_SUBTYPES = {"error_during_execution"}
+SAFE_FAILURE_SUBTYPES = {"error_during_execution", "success"}
 
 
 def _json_bytes(value: object) -> bytes:
@@ -185,6 +185,7 @@ def summarize_failure(
     result_type = payload.get("type")
     result_subtype = payload.get("subtype")
     is_error = payload.get("is_error")
+    api_error_status = payload.get("api_error_status")
     evidence: dict[str, Any] = {
         "schema_version": 1,
         "target": "claude",
@@ -236,6 +237,12 @@ def summarize_failure(
         },
         "CLAUDE_PROVIDER_MARKER": "NOT_PASS",
     }
+    if (
+        isinstance(api_error_status, int)
+        and not isinstance(api_error_status, bool)
+        and 100 <= api_error_status <= 599
+    ):
+        evidence["failure"]["api_error_status"] = api_error_status
     evidence["evidence_body_sha256"] = evidence_body_sha256(evidence)
     return evidence
 

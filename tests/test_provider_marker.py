@@ -169,6 +169,36 @@ def test_failed_marker_writes_hash_only_privacy_safe_evidence():
     }
 
 
+def test_failed_api_result_retains_only_safe_status_metadata():
+    eligibility = _eligibility("2026-07-26T12:00:00Z")
+    stdout = json.dumps(
+        {
+            "type": "result",
+            "subtype": "success",
+            "is_error": True,
+            "api_error_status": 429,
+            "result": "sensitive rate-limit response",
+            "errors": ["sensitive provider detail"],
+            "session_id": "sensitive-session-id",
+        }
+    )
+
+    evidence = marker.summarize_failure(
+        returncode=1,
+        stdout=stdout,
+        stderr="",
+        eligibility=eligibility,
+        client_version="2.1.218",
+    )
+
+    assert evidence["failure"]["result_subtype"] == "success"
+    assert evidence["failure"]["api_error_status"] == 429
+    serialized = json.dumps(evidence)
+    assert "sensitive rate-limit response" not in serialized
+    assert "sensitive provider detail" not in serialized
+    assert "sensitive-session-id" not in serialized
+
+
 def test_failed_marker_process_persists_not_pass_evidence(
     monkeypatch, tmp_path
 ):
