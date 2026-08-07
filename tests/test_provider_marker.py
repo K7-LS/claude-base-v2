@@ -3,7 +3,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -42,6 +42,16 @@ def _eligibility(recorded: str) -> dict[str, object]:
     }
     value["evidence_body_sha256"] = marker.evidence_body_sha256(value)
     return value
+
+
+def _recent() -> str:
+    """Свежая отметка для тестов, которые не инжектируют `now`.
+
+    Фиксированная дата здесь протухает через семь дней и роняет тесты,
+    не относящиеся к сроку годности evidence.
+    """
+    recorded = datetime.now(timezone.utc) - timedelta(days=1)
+    return recorded.replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 def test_eligibility_is_pii_free_current_and_owner_attested():
@@ -91,7 +101,7 @@ def test_marker_command_disables_tools_and_session_persistence(tmp_path: Path):
 
 
 def test_marker_summary_contains_hash_usage_and_no_response_or_identity():
-    eligibility = _eligibility("2026-07-26T12:00:00Z")
+    eligibility = _eligibility(_recent())
     result = {
         "type": "result",
         "subtype": "success",
@@ -121,7 +131,7 @@ def test_marker_summary_contains_hash_usage_and_no_response_or_identity():
 
 
 def test_failed_marker_writes_hash_only_privacy_safe_evidence():
-    eligibility = _eligibility("2026-07-26T12:00:00Z")
+    eligibility = _eligibility(_recent())
     stdout = json.dumps(
         {
             "type": "result",
@@ -171,7 +181,7 @@ def test_failed_marker_writes_hash_only_privacy_safe_evidence():
 
 
 def test_failed_api_result_retains_only_safe_status_metadata():
-    eligibility = _eligibility("2026-07-26T12:00:00Z")
+    eligibility = _eligibility(_recent())
     stdout = json.dumps(
         {
             "type": "result",
@@ -205,7 +215,7 @@ def test_failed_marker_process_persists_not_pass_evidence(
 ):
     eligibility_path = tmp_path / "eligibility.json"
     eligibility_path.write_text(
-        json.dumps(_eligibility("2026-07-26T12:00:00Z")),
+        json.dumps(_eligibility(_recent())),
         encoding="utf-8",
     )
     output = tmp_path / "marker.json"
