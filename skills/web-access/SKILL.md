@@ -100,24 +100,55 @@ WARP-машине `--noproxy` мёртв → ступень висела бы 15
 - Поиск/добыча документа качества по артикулу (карточки, dorks) → `doc-finder`.
 - Извлечение текста/таблиц из уже скачанного PDF → `doc-extract`.
 
+## doctor — узнать о мёртвой ступени до боя
+```
+python ~/.claude/skills/web-access/tools/doctor.py [--json]
+```
+Реально пробует каждую ступень (не «команда существует»): egress + живость
+`--noproxy`, direct / noproxy / jina (с ключом и без), ru-слой, зарегистрированы ли
+MCP-ступени (exa/firecrawl/playwright), наличие ключей (значения не печатаются),
+yt-dlp. На каждую поломку — рецепт починки. Прогонять при «в сети ничего не берётся»
+и после смены сети или VPN — иначе мёртвая ступень читается как «сайта нет».
+
+## Ключи (per-machine, в поставку не входят)
+`~/.claude/.local-state/secrets.env` (каталог gitignored), приоритет — за env:
+`JINA_API_KEY` · `FIRECRAWL_API_KEY` · `EXA_API_KEY` · `RU_PROXY`.
+`JINA_API_KEY` важен: без ключа `r.jina.ai` отдаёт 403 Cloudflare на антибот-целях
+(замер 2026-08-06: `ridan.ru` без ключа 403, с ключом 200 и 142 КБ) и режет частые
+запросы. С ключом ступень jina вытягивает RU-цели, которые иначе уходят в next_hint.
+
+## Субтитры видео по URL
+```
+python ~/.claude/skills/web-access/tools/yt_subs.py <URL> [--lang ru,en] [-o out.txt]
+python ~/.claude/skills/web-access/tools/yt_subs.py <URL> --list
+```
+yt-dlp: берёт готовые субтитры (ручные приоритетнее авто), само видео не качает.
+На VPN или датацентр-egress YouTube требует куки — тогда `--cookies-from-browser chrome`
+(браузер закрыт) или ручной экспорт `--cookies <файл>`; инструмент сам печатает
+причину и рецепт. Субтитров нет вовсе или нужны кадры → [[local-video-digest]]
+(локальный файл + faster-whisper).
+
 ## Файлы скилла
 - `tools/web_get.py` — транспорт (лестница ступеней + верификация).
+- `tools/doctor.py` — health-check ступеней и ключей.
+- `tools/yt_subs.py` — субтитры видео по URL (yt-dlp).
 - `tools/main_sites.md` — **реестр главных сайтов** (маршрутизатор ПОИСКА; наполняет владелец).
-- `tests/test_web_get.py` — юнит-тесты транспорта.
 
-## Тесты
-- `tests/test_web_get.py` — 27 юнит-проверок чистой логики (классификация, маршрутизация,
-  верификация page/file, next_hint), без сети. Прогон: `python tests/test_web_get.py`.
+## Проверено
+- Юнит-проверки чистой логики транспорта (классификация, маршрутизация, верификация
+  page/file, next_hint) живут в репозитории базы и в поставку не входят.
 - Живые smoke (2026-07-08, egress=NL): зарубежная страница → direct; ridan.ru →
   jina после падения ru; мёртвый URL → все пали + next_hint; arxiv PDF → direct+%PDF;
-  W3C 403 → заглушка `<!DO` пойма верификацией (не выдана за успех).
+  W3C 403 → заглушка `<!DO` поймана верификацией (не выдана за успех).
+- Верификация текстовых целей (2026-08-06): `.md/.csv/.json/.xml/.yml` сигнатуры не
+  имеют — проверяются как декодируемый текст без challenge-маркера, иначе корректно
+  скачанный файл признавался мусором (`unknown-magic`).
 
 ## Раздача
-Скилл целиком в `~/.claude/skills/web-access/` (SKILL.md + tools/web_get.py + tests/) —
-штатный sync-base, без ключей. Зависит от соседнего `ru-gov-access/tools/ru_fetch.py`
-(тоже в базе). `$RU_PROXY` (per-machine, `CLAUDE.user.md`) усиливает ru-слой.
+Скилл целиком в `~/.claude/skills/web-access/` — штатный `$sync-base`, без ключей.
+Зависит от соседнего `ru-gov-access/tools/ru_fetch.py` (тоже в базе). `RU_PROXY`
+из `secrets.env` усиливает ru-слой.
 
 ## Связи
 [[feedback_web_direct_access]] · [[ru-gov-access]] · [[web_access_r_jina_fallback]] ·
-[[web_access_survey_2026_06]] · [[playwright_mcp_pin_version]] ·
-Codex: см. `references/codex.md`.
+[[playwright_mcp_pin_version]] · Codex: см. `references/codex.md`.

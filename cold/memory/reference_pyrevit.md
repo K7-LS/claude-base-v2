@@ -2,7 +2,7 @@
 created: 2026-06-03
 updated: 2026-06-03
 status: active
-owner: Даниил
+owner: <владелец базы>
 tags: [reference, pyrevit, revit, ironpython, plugin, новый-домен]
 related:
   - [[karpathy-guidelines]]

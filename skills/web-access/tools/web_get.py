@@ -46,7 +46,12 @@ CHALLENGE_MARKERS = (
     "проверка браузера", "доступ ограничен",
 )
 FILE_EXT = (".pdf", ".zip", ".xlsx", ".xls", ".docx", ".doc", ".rar",
-            ".dwg", ".dxf", ".png", ".jpg", ".jpeg", ".rtf", ".7z")
+            ".dwg", ".dxf", ".png", ".jpg", ".jpeg", ".rtf", ".7z",
+            ".md", ".txt", ".csv", ".json", ".xml", ".svg", ".yml", ".yaml")
+# Текстовые форматы: магической сигнатуры НЕ имеют, проверяются как текст.
+# Без этого любой .md/.csv/.json ловил ложный unknown-magic (баг найден 2026-08-06
+# на скачивании README.md — файл качался корректно, но признавался мусором).
+TEXT_EXT = (".md", ".txt", ".csv", ".json", ".xml", ".svg", ".yml", ".yaml", ".dxf")
 # Сигнатуры бинарных файлов (первые байты) для верификации скачанного.
 MAGIC = {
     b"%PDF": "pdf", b"PK\x03\x04": "zip/office", b"Rar!": "rar",
@@ -154,8 +159,12 @@ def verify_page(body_bytes, http):
     return True, "ok"
 
 
-def verify_file(path, http, expect_pdf):
-    """Файл валиден: скачан, не HTML-заглушка, магическая сигнатура известна."""
+def verify_file(path, http, expect_pdf, url=""):
+    """Файл валиден: скачан, не HTML-заглушка, сигнатура известна.
+
+    Текстовые форматы (.md/.csv/.json/...) магии не имеют — для них проверяем,
+    что это декодируемый текст без html-заглушки, а не бинарную сигнатуру.
+    """
     if not http or http[0] not in "23":
         return False, f"http={http}"
     if not path or not os.path.exists(path) or os.path.getsize(path) < 64:
@@ -166,10 +175,39 @@ def verify_file(path, http, expect_pdf):
         return False, "html-stub (not a file)"
     sig = next((name for magic, name in MAGIC.items() if head.startswith(magic)), None)
     if sig is None:
+        # Текстовая цель? Тогда отсутствие магии — норма, а не провал.
+        target = (url or path or "").lower().split("?")[0]
+        if any(target.endswith(e) for e in TEXT_EXT):
+            ok, reason = verify_text_file(path)
+            if not ok:
+                return False, reason
+            return True, "text"
         return False, f"unknown-magic:{head[:4]!r}"
     if expect_pdf and sig != "pdf":
         return False, f"expected pdf, got {sig}"
     return True, sig
+
+
+def verify_text_file(path, probe=4096):
+    """Текстовый файл валиден: декодируется как UTF-8/cp1251 и не challenge-заглушка."""
+    with open(path, "rb") as f:
+        chunk = f.read(probe)
+    if b"\x00" in chunk:
+        return False, "binary-content (ожидался текст)"
+    text = None
+    for enc in ("utf-8", "cp1251"):
+        try:
+            text = chunk.decode(enc)
+            break
+        except UnicodeDecodeError:
+            continue
+    if text is None:
+        return False, "undecodable-text"
+    low = text.lower()
+    for mk in CHALLENGE_MARKERS:
+        if mk in low:
+            return False, f"challenge:{mk}"
+    return True, "text"
 
 
 def curl_page(url, direct, timeout):
@@ -195,11 +233,38 @@ def curl_file(url, out_path, direct, timeout):
     return _http_code(tail)
 
 
+def secret(name):
+    """Per-machine секрет: env приоритетнее, иначе .local-state/secrets.env (gitignored)."""
+    if os.environ.get(name):
+        return os.environ[name].strip()
+    path = os.path.join(os.path.expanduser("~"), ".claude", ".local-state", "secrets.env")
+    try:
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                k, _, v = line.partition("=")
+                if k.strip() == name:
+                    return v.strip()
+    except OSError:
+        pass
+    return None
+
+
 def jina_page(url, timeout):
-    """r.jina.ai — облачный reader: берёт антибот/JS-сайты, отдаёт текст. Без ключа."""
+    """r.jina.ai — облачный reader: берёт антибот/JS-сайты, отдаёт текст.
+
+    С ключом (JINA_API_KEY) заметно сильнее: без ключа RU-сайты с антиботом
+    отдают 403 Cloudflare, с ключом читаются (замер 2026-08-06 на ridan.ru).
+    """
     jurl = "https://r.jina.ai/" + url
     args = ["curl", "-sSL", "-A", UA, "-w", "\n__HTTP__%{http_code}",
-            "--max-time", str(timeout + 15), jurl]
+            "--max-time", str(timeout + 15)]
+    key = secret("JINA_API_KEY")
+    if key:
+        args += ["-H", f"Authorization: Bearer {key}"]
+    args += [jurl]
     rc, out, _ = run(args, timeout + 22)
     http = _http_code(out)
     body = re.sub(rb"\n__HTTP__\d{3}$", b"", out or b"")
@@ -269,7 +334,7 @@ def attempt(stage, url, kind, out_path, timeout, expect_pdf):
     else:
         r.update(ok=False, reason="unknown stage")
         return r
-    ok, reason = verify_file(out_path, http, expect_pdf)
+    ok, reason = verify_file(out_path, http, expect_pdf, url)
     r.update(ok=ok, http=http, reason=reason)
     if ok:
         r["out"] = out_path

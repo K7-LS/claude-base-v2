@@ -6,7 +6,7 @@
       "kind": "agent",
       "id": "audit-rd-section",
       "path": "agents/audit-rd-section.md",
-      "sha256": "b62216855bed3dcb61f682e047934824aabebdc311bd6d3a8c0da63b4b93fa43",
+      "sha256": "695a666798ece1df3c5adffb9fcdc9c0baebabb75bbe3a757b7a327ff084ba04",
       "source_repository": "https://github.com/daniileliseev1337/claude-base",
       "source_commit": "d263065d902000a032c87bd31175889168f616bc"
     },
@@ -14,7 +14,7 @@
       "kind": "agent",
       "id": "auditor",
       "path": "agents/auditor.md",
-      "sha256": "a7b0f3861bee64fdb949b623d4117ca8dcf33cd8c0e7c18510be7564d70f0aed",
+      "sha256": "7cda853e3cb03e0f7d6e82ce4a722fa45adc413f9fc2a01c0cfc7124c5aa4744",
       "source_repository": "https://github.com/daniileliseev1337/claude-base",
       "source_commit": "d263065d902000a032c87bd31175889168f616bc"
     },
@@ -22,7 +22,7 @@
       "kind": "agent",
       "id": "designer",
       "path": "agents/designer.md",
-      "sha256": "eb332ab01cc055b8ac80af3617f745a86a246f07b9dc057085670247db8e9ea0",
+      "sha256": "6cb05adcedc9dfb857878f4275cb5599840dec56439e5f4f05f432d0822eebc2",
       "source_repository": "https://github.com/daniileliseev1337/claude-base",
       "source_commit": "d263065d902000a032c87bd31175889168f616bc"
     },
@@ -30,7 +30,7 @@
       "kind": "agent",
       "id": "excel-validator",
       "path": "agents/excel-validator.md",
-      "sha256": "9771d5c3ead72b1e52f878bad56465179f7715fc11ec8e1b2f82a7ad9696b4ad",
+      "sha256": "6960941ecb59164d67b539c5d6ebb9d3f9b0441f6eef0722450f8196de68048e",
       "source_repository": "https://github.com/daniileliseev1337/claude-base",
       "source_commit": "d263065d902000a032c87bd31175889168f616bc"
     },
@@ -38,7 +38,7 @@
       "kind": "agent",
       "id": "expertiza-responder",
       "path": "agents/expertiza-responder.md",
-      "sha256": "caab4ef53dd2ec181ae9f44b52816a954016ee02978192d2d37c5f39bdaec189",
+      "sha256": "c053a44d465736f2348687e883a744b8262fb976aa36bbfbab2dfc2d908f5eed",
       "source_repository": "https://github.com/daniileliseev1337/claude-base",
       "source_commit": "d263065d902000a032c87bd31175889168f616bc"
     },
@@ -46,7 +46,7 @@
       "kind": "agent",
       "id": "id-engineer",
       "path": "agents/id-engineer.md",
-      "sha256": "ea866c6b1700522261c19f148afaf0134e2b7a3fca3b7ac771c1fdbcedfa467c",
+      "sha256": "742adabe915fa480d00d92027d87efe3a6c2ca7e6547c06f2bdf83947e916ddd",
       "source_repository": "https://github.com/daniileliseev1337/claude-base",
       "source_commit": "d263065d902000a032c87bd31175889168f616bc"
     },
@@ -54,7 +54,7 @@
       "kind": "agent",
       "id": "kp-writer",
       "path": "agents/kp-writer.md",
-      "sha256": "2980f627b6a0c7b55b0bf927e0448ffb4ec6804415c105d5d1f4a670d3e2df4c",
+      "sha256": "dff531aa7201c2ed46a7654b8b84f4db9b73c11f61c33d8d7c19093cd0077eba",
       "source_repository": "https://github.com/daniileliseev1337/claude-base",
       "source_commit": "d263065d902000a032c87bd31175889168f616bc"
     },
@@ -62,7 +62,7 @@
       "kind": "agent",
       "id": "letter-writer",
       "path": "agents/letter-writer.md",
-      "sha256": "e528f7a93a18b4f4204c3e0781706fdf4adc77d77667f556344e2b6ec4c6c438",
+      "sha256": "700f2f7cdd674b8382c78dfb57db79cec538bc8ee7365c74aa2b80414e4a3037",
       "source_repository": "https://github.com/daniileliseev1337/claude-base",
       "source_commit": "d263065d902000a032c87bd31175889168f616bc"
     },
@@ -70,7 +70,7 @@
       "kind": "agent",
       "id": "norm-lookup",
       "path": "agents/norm-lookup.md",
-      "sha256": "fa0ba789f0b54c5c69d1a4f9ee58ac4962b1c3b5ddf712f796c5b931a462a06a",
+      "sha256": "070ce60b2adf7fa306e49e26fc2100f5596a06b67807835c2b80dd54b1b3615c",
       "source_repository": "https://github.com/daniileliseev1337/claude-base",
       "source_commit": "d263065d902000a032c87bd31175889168f616bc"
     },
@@ -78,7 +78,7 @@
       "kind": "agent",
       "id": "pdf-reviewer",
       "path": "agents/pdf-reviewer.md",
-      "sha256": "17eb0ab46ad49aee89876ffed13a55bb3562875acd09c4d0d9e3af961a67c1dc",
+      "sha256": "8bd2df6d36a8513c721cfcb987ca4460136a7385de800ba803f1f33bb917d424",
       "source_repository": "https://github.com/daniileliseev1337/claude-base",
       "source_commit": "d263065d902000a032c87bd31175889168f616bc"
     },
@@ -86,7 +86,7 @@
       "kind": "agent",
       "id": "pto-engineer",
       "path": "agents/pto-engineer.md",
-      "sha256": "99aba96955e4e0b2b59b65eff762ec0fdf3e80970d4de007cb83c57f39db62c9",
+      "sha256": "bc951e4b24bac77d41f7ee36950c171aef2b8195747914bdeca1a681400f169d",
       "source_repository": "https://github.com/daniileliseev1337/claude-base",
       "source_commit": "d263065d902000a032c87bd31175889168f616bc"
     },
@@ -94,7 +94,7 @@
       "kind": "agent",
       "id": "pyrevit-engineer",
       "path": "agents/pyrevit-engineer.md",
-      "sha256": "2b64693f2e2a2695209834efc977502244fd19cc53a7cf3f0a4a5f42834808e0",
+      "sha256": "18427336004f0c47e7709898409121f69f03cb46c5e2762ddd92349c728960a8",
       "source_repository": "https://github.com/daniileliseev1337/claude-base",
       "source_commit": "d263065d902000a032c87bd31175889168f616bc"
     },
@@ -102,7 +102,7 @@
       "kind": "agent",
       "id": "rd-coordinator",
       "path": "agents/rd-coordinator.md",
-      "sha256": "2abb9e41f2b86a91826ec2af7ce77c3610d858cc09b644e973a33e8f838b41d6",
+      "sha256": "74f45fabea83551d1c5375d1728a20c8b1fc105fbbbba5f921399f5e89efb539",
       "source_repository": "https://github.com/daniileliseev1337/claude-base",
       "source_commit": "d263065d902000a032c87bd31175889168f616bc"
     },
@@ -110,7 +110,7 @@
       "kind": "agent",
       "id": "smetchik",
       "path": "agents/smetchik.md",
-      "sha256": "e790e4db21e397edf9dcb10600c9de77a90399c104dc101973230f6f85dc39de",
+      "sha256": "bd0ab9fde4f66b1e6054c8b16e861e739dbebe8412ff98218710e433f8e52fd0",
       "source_repository": "https://github.com/daniileliseev1337/claude-base",
       "source_commit": "d263065d902000a032c87bd31175889168f616bc"
     },
@@ -118,7 +118,7 @@
       "kind": "agent",
       "id": "snabzhenets",
       "path": "agents/snabzhenets.md",
-      "sha256": "4102346048179a235bc0ad3baad93254819c5a8679079888268ca5588c74a90e",
+      "sha256": "3924a3e50cae1349ce972694ed9beb36e7e47b9d7b5b02cda4e26e58f5e66442",
       "source_repository": "https://github.com/daniileliseev1337/claude-base",
       "source_commit": "d263065d902000a032c87bd31175889168f616bc"
     },
@@ -126,7 +126,7 @@
       "kind": "agent",
       "id": "word-checker",
       "path": "agents/word-checker.md",
-      "sha256": "91bf06716a8a68418b26f528fd6f738d3d628d62ea8190b5f3ac3e1442d7e09a",
+      "sha256": "ee109bdab3c16755cee1a612027506e3ba3181978e464729a5333e791cffe9d7",
       "source_repository": "https://github.com/daniileliseev1337/claude-base",
       "source_commit": "d263065d902000a032c87bd31175889168f616bc"
     },
@@ -134,7 +134,7 @@
       "kind": "skill",
       "id": "acad-recreation",
       "path": "skills/acad-recreation",
-      "sha256": "c9709dc5bb9b4cbb8bbddc3119ab76b0719fff7a6446ed4461b2ef422d7a0ad6",
+      "sha256": "32090e0297883892227af645fa52e6fb3b5b7c6ceed2bda8a6423ea75aec1bae",
       "source_repository": "https://github.com/daniileliseev1337/claude-base",
       "source_commit": "d263065d902000a032c87bd31175889168f616bc"
     },
@@ -142,7 +142,7 @@
       "kind": "skill",
       "id": "cad-reader",
       "path": "skills/cad-reader",
-      "sha256": "60cc7514e69b86e39f5b30bd2755805b8ef4f2017debf666b6185365edbc67e8",
+      "sha256": "e3b44f5d6a819abee73ac9b7d4f41a78f23a48969c57d9c3b9b3e07c4bbfd22a",
       "source_repository": "https://github.com/daniileliseev1337/claude-base",
       "source_commit": "d263065d902000a032c87bd31175889168f616bc"
     },
@@ -150,7 +150,7 @@
       "kind": "skill",
       "id": "chains-pattern",
       "path": "skills/chains-pattern",
-      "sha256": "87b1c00ef7684fca4f2b61ccb61ef8f88eb073b874dee883250ee2eeb37e482b",
+      "sha256": "a0f03096165ee9e7637c5a9edf3f6e803b79667013f97a1d96bc0ed14f84f05a",
       "source_repository": "https://github.com/daniileliseev1337/claude-base",
       "source_commit": "d263065d902000a032c87bd31175889168f616bc"
     },
@@ -158,7 +158,7 @@
       "kind": "skill",
       "id": "co-verify",
       "path": "skills/co-verify",
-      "sha256": "a4323b1e9bf8feeca30d40c2a76f080c6431b355099c7994dbba22d20786f545",
+      "sha256": "9e4360415ac7aa6995064201f04511698a0a2a144902bf100835c10a16690eca",
       "source_repository": "https://github.com/daniileliseev1337/claude-base",
       "source_commit": "d263065d902000a032c87bd31175889168f616bc"
     },
@@ -166,7 +166,7 @@
       "kind": "skill",
       "id": "doc-extract",
       "path": "skills/doc-extract",
-      "sha256": "61c5fcd409ec5bc909816164d52a72f33d64904d97d24ca47ca7057b98969aa5",
+      "sha256": "8ee1384f56af91d7e07d9544e83d0ec7f2df3ff3df88cc25a35a47f949f77917",
       "source_repository": "https://github.com/daniileliseev1337/claude-base",
       "source_commit": "d263065d902000a032c87bd31175889168f616bc"
     },
@@ -174,7 +174,7 @@
       "kind": "skill",
       "id": "doc-finder",
       "path": "skills/doc-finder",
-      "sha256": "c95b25cf97fd2446f32193720f24391e04b5a7fd436f4a10295c324759476eff",
+      "sha256": "2ba90a3ded9555dbe986c00ead5fbbc950b24df4d1290068193f1ba7c8494505",
       "source_repository": "https://github.com/daniileliseev1337/claude-base",
       "source_commit": "d263065d902000a032c87bd31175889168f616bc"
     },
@@ -182,7 +182,7 @@
       "kind": "skill",
       "id": "domain-grilling",
       "path": "skills/domain-grilling",
-      "sha256": "163d708b3f5659e50feca9ed4687e97b64b5caef82121c1de14bffd84863b7ac",
+      "sha256": "a51c30231c677875449fbf940ac8675a5a7f0b4011c966968f2e566ccbf6db9f",
       "source_repository": "https://github.com/daniileliseev1337/claude-base",
       "source_commit": "d263065d902000a032c87bd31175889168f616bc"
     },
@@ -190,7 +190,7 @@
       "kind": "skill",
       "id": "excel-helper",
       "path": "skills/excel-helper",
-      "sha256": "e7d88981e756951fade26116dc29aae2245f4a4e9d7a191fd59100b2feced9bb",
+      "sha256": "b37049421a6fe8a3985425f31d8433722f0f836f9773a33b63de2e0cde4be10b",
       "source_repository": "https://github.com/daniileliseev1337/claude-base",
       "source_commit": "d263065d902000a032c87bd31175889168f616bc"
     },
@@ -198,7 +198,7 @@
       "kind": "skill",
       "id": "facts-layer",
       "path": "skills/facts-layer",
-      "sha256": "a24e1af426684e4589040b55ab9c5fe1313d709c3e06eb047a5a11bda25eb92d",
+      "sha256": "d8e2efc90381c68e6520ab4f99cb809c31ed193475c68d6bf1e9cfcd6927618a",
       "source_repository": "https://github.com/daniileliseev1337/claude-base",
       "source_commit": "d263065d902000a032c87bd31175889168f616bc"
     },
@@ -206,7 +206,7 @@
       "kind": "skill",
       "id": "graphify",
       "path": "skills/graphify",
-      "sha256": "e8988b08bf62b15e48ebbf95ecd1b9a8eec12ff083e841a63a0389be347c495f",
+      "sha256": "4d2b5285f4317847aef7692d56534741c14897673f5aa56d2f2d14814cc9aa46",
       "source_repository": "https://github.com/daniileliseev1337/claude-base",
       "source_commit": "d263065d902000a032c87bd31175889168f616bc"
     },
@@ -214,7 +214,7 @@
       "kind": "skill",
       "id": "handoff-to-new-chat",
       "path": "skills/handoff-to-new-chat",
-      "sha256": "d0b79fe082f0abd578aadcff6268763249a2217483328471ddfb96416559da24",
+      "sha256": "939fd2fa85e93d82d94b1d82bc5c7ab310e6d4ca42465404e2aa8afb93bb8da6",
       "source_repository": "https://github.com/daniileliseev1337/claude-base",
       "source_commit": "d263065d902000a032c87bd31175889168f616bc"
     },
@@ -222,7 +222,7 @@
       "kind": "skill",
       "id": "id-tom-priemka",
       "path": "skills/id-tom-priemka",
-      "sha256": "319c46229352060ae8ab07260ad5f52ae71b377dd478f101eb8cdb874d0dcfff",
+      "sha256": "6e58f8efa12db3e8076910e7da20308e0663a26161a11e56f0f445e3138e8077",
       "source_repository": "https://github.com/daniileliseev1337/claude-base",
       "source_commit": "d263065d902000a032c87bd31175889168f616bc"
     },
@@ -230,7 +230,7 @@
       "kind": "skill",
       "id": "image-text-replace",
       "path": "skills/image-text-replace",
-      "sha256": "9b8ef446e60106156a1ffbe8a959d9f8a4ca9e919bd01a7ff9266ae6f087f1da",
+      "sha256": "24b00918cb828a829580684fa5b31336d01dd59c95aa8445636cfc693d2cbecd",
       "source_repository": "https://github.com/daniileliseev1337/claude-base",
       "source_commit": "d263065d902000a032c87bd31175889168f616bc"
     },
@@ -238,7 +238,7 @@
       "kind": "skill",
       "id": "karpathy-guidelines",
       "path": "skills/karpathy-guidelines",
-      "sha256": "ab4d86212af069fca10f8a2ace6ceb4dd27180d82207f0dc172d3fb8aef94cc4",
+      "sha256": "32f076f352ba94bb5a681e5c6f2b25f66f47d655cad40fefd0e05b3111f91f93",
       "source_repository": "https://github.com/daniileliseev1337/claude-base",
       "source_commit": "d263065d902000a032c87bd31175889168f616bc"
     },
@@ -246,7 +246,7 @@
       "kind": "skill",
       "id": "llm-interop",
       "path": "skills/llm-interop",
-      "sha256": "1535d90783332170bef2be5ae586dc2b2c5861b4032feef899cc80a25128c70c",
+      "sha256": "e10efde816d45ff3c4a17b3e13b02cc6c0c1b1fb557a3918c042f5bccf64acdd",
       "source_repository": "https://github.com/daniileliseev1337/claude-base",
       "source_commit": "d263065d902000a032c87bd31175889168f616bc"
     },
@@ -254,7 +254,7 @@
       "kind": "skill",
       "id": "local-osint-recon",
       "path": "skills/local-osint-recon",
-      "sha256": "bd5fb54cad0c14d330ade440277574aa17e93e8cce2aeaf1aa95eea82f45c006",
+      "sha256": "b9cefb8ebd0239264b5fb16c033d64bc03fcf5db1ea8b8c141d94f0c1934cf45",
       "source_repository": "https://github.com/daniileliseev1337/claude-base",
       "source_commit": "d263065d902000a032c87bd31175889168f616bc"
     },
@@ -262,7 +262,7 @@
       "kind": "skill",
       "id": "local-video-digest",
       "path": "skills/local-video-digest",
-      "sha256": "fad54969e90e0fcd9441567b6e6310d13fa40174c75331ca86c3b7921ff1cf84",
+      "sha256": "b741a162a47929556b8f2a10a8cce8cd0cab9f3a130eecef3f84bdeffcd81776",
       "source_repository": "https://github.com/daniileliseev1337/claude-base",
       "source_commit": "d263065d902000a032c87bd31175889168f616bc"
     },
@@ -270,7 +270,7 @@
       "kind": "skill",
       "id": "pd-tep-extractor",
       "path": "skills/pd-tep-extractor",
-      "sha256": "4fa6b1c149f20ef8dc3acdf0335517af2aca3918c52b7f333a820995375a1dcb",
+      "sha256": "0929b375dab6883755a27d40a68aca11053ac51469ef49bf162dd6aa42580dfb",
       "source_repository": "https://github.com/daniileliseev1337/claude-base",
       "source_commit": "d263065d902000a032c87bd31175889168f616bc"
     },
@@ -286,7 +286,7 @@
       "kind": "skill",
       "id": "pnr-vor-helper",
       "path": "skills/pnr-vor-helper",
-      "sha256": "ff3185c6eaefd0d459f5161d3d03b5ff755acbc28053b361c8245bf7597b78c3",
+      "sha256": "ccfa24278fdf7d7f51bd50b067b9b9be4d15b02ffdcac3cfcec9a335dd9eb24e",
       "source_repository": "https://github.com/daniileliseev1337/claude-base",
       "source_commit": "d263065d902000a032c87bd31175889168f616bc"
     },
@@ -294,7 +294,7 @@
       "kind": "skill",
       "id": "project-memory",
       "path": "skills/project-memory",
-      "sha256": "279cf54b68a93bc4fd8310b5aebba1d2ebc78a75a776b522218a99a4fb093ef4",
+      "sha256": "fc028e92616dadc0b5bfad8ab9a44be194f5beff052acd57b5efd26de993ad03",
       "source_repository": "https://github.com/daniileliseev1337/claude-base",
       "source_commit": "d263065d902000a032c87bd31175889168f616bc"
     },
@@ -302,7 +302,7 @@
       "kind": "skill",
       "id": "revit-family-generator",
       "path": "skills/revit-family-generator",
-      "sha256": "386a14f5e4082651d6e4d227d9da84efa2bd8c1070433e1044fac9bc10bc3ed8",
+      "sha256": "97d46d7231e8aad7977bd5bede0255f8623b951b2c68353c24d6a8aebca38c95",
       "source_repository": "https://github.com/daniileliseev1337/claude-base",
       "source_commit": "d263065d902000a032c87bd31175889168f616bc"
     },
@@ -310,7 +310,7 @@
       "kind": "skill",
       "id": "revit-family-generator-ru",
       "path": "skills/revit-family-generator-ru",
-      "sha256": "fc744b92db475ddcb42ee99286ba68ba75d8c3bdc69b477852d664ebde5d3b67",
+      "sha256": "4243c0c6a1a4489f23a2be46ccf1d8675dae6d5bf0ca0562eda3e7f16b2167b3",
       "source_repository": "https://github.com/daniileliseev1337/claude-base",
       "source_commit": "d263065d902000a032c87bd31175889168f616bc"
     },
@@ -326,7 +326,7 @@
       "kind": "skill",
       "id": "ru-gov-access",
       "path": "skills/ru-gov-access",
-      "sha256": "73b4fc6d5871792c047f6358c14fee2277ff1aeebaecb4eb8df0f25a55da0b1a",
+      "sha256": "5a59968d53378e5a636463cf06cee0f374eef8691303432a8538d0dd71bb3afe",
       "source_repository": "https://github.com/daniileliseev1337/claude-base",
       "source_commit": "d263065d902000a032c87bd31175889168f616bc"
     },
@@ -334,7 +334,7 @@
       "kind": "skill",
       "id": "skill-development",
       "path": "skills/skill-development",
-      "sha256": "f0592ed7be01f0dc166ec3e8abc21e376c7a008030653c2f5efdd8e296febc62",
+      "sha256": "d2aeaf3235271551d4cb64be3b8b17aac181fc87ee37938054e8b8f7c7479cca",
       "source_repository": "https://github.com/daniileliseev1337/claude-base",
       "source_commit": "d263065d902000a032c87bd31175889168f616bc"
     },
@@ -342,7 +342,7 @@
       "kind": "skill",
       "id": "spec-writer",
       "path": "skills/spec-writer",
-      "sha256": "9354a42ff9197950d7508460d21018d88438c5a8e52ff0628ce4cbb18f50ef2a",
+      "sha256": "8b4d12efba223277703aa4b6749e04913fc348e8419b4c36a35855146a4629f4",
       "source_repository": "https://github.com/daniileliseev1337/claude-base",
       "source_commit": "d263065d902000a032c87bd31175889168f616bc"
     },
@@ -358,7 +358,7 @@
       "kind": "skill",
       "id": "structured-artifacts",
       "path": "skills/structured-artifacts",
-      "sha256": "47042749701d3462504be76b82d9de86d06012076498eebe540dbe555f39b1e7",
+      "sha256": "2cd94e934471011c61f6fe517868c9b46bfbc02d25feb96838d45e65b29e81b4",
       "source_repository": "https://github.com/daniileliseev1337/claude-base",
       "source_commit": "d263065d902000a032c87bd31175889168f616bc"
     },
@@ -366,7 +366,7 @@
       "kind": "skill",
       "id": "supervisor",
       "path": "skills/supervisor",
-      "sha256": "f614d34c2eb8e49865e3fb4db0de7bc9f0349095246d79dcd0d86fc520874353",
+      "sha256": "f59921d1ae326debe636a6121df922ec2aa7b9ed66bee90223c8231a4ced75ca",
       "source_repository": "https://github.com/daniileliseev1337/claude-base",
       "source_commit": "d263065d902000a032c87bd31175889168f616bc"
     },
@@ -374,7 +374,7 @@
       "kind": "skill",
       "id": "supplier-due-diligence",
       "path": "skills/supplier-due-diligence",
-      "sha256": "10a3bdc264d01779bd49e733b461d14d07968568e60eb881ca1ea491025a8c32",
+      "sha256": "c9213d845f4aa00a43551fdea9ccf1ccc8a17585b58e97ed7576ce3594b0228d",
       "source_repository": "https://github.com/daniileliseev1337/claude-base",
       "source_commit": "d263065d902000a032c87bd31175889168f616bc"
     },
@@ -382,7 +382,7 @@
       "kind": "skill",
       "id": "svor-vor-works-base",
       "path": "skills/svor-vor-works-base",
-      "sha256": "9ffe820c8c00c609f645d6ca89ac2fd41ac09908968a2c1884b0f9d3f6819730",
+      "sha256": "dd94e12ad28d22d218dc2ab65291d06c261dc29d5c766cf3a77f6bc1b906badc",
       "source_repository": "https://github.com/daniileliseev1337/claude-base",
       "source_commit": "d263065d902000a032c87bd31175889168f616bc"
     },
@@ -390,7 +390,7 @@
       "kind": "skill",
       "id": "understanding-map",
       "path": "skills/understanding-map",
-      "sha256": "a440b7de37cca7f01b99d5f644dd51a62023e2b04dce2fe840691d1d5f140da4",
+      "sha256": "ba06f9eeb151f5d4720f942f704a4aba29291a157d84c08d002425dbf79e8785",
       "source_repository": "https://github.com/daniileliseev1337/claude-base",
       "source_commit": "d263065d902000a032c87bd31175889168f616bc"
     },
@@ -398,7 +398,7 @@
       "kind": "skill",
       "id": "upd-parser",
       "path": "skills/upd-parser",
-      "sha256": "d71ce549a222cdf8ec6a2d8c2a285b58a36ddf7b65480660faef426ec36d811c",
+      "sha256": "fdb03a6a93286eaa13cd5870522f8919df12b651d9680e642ecb45d6023d4d23",
       "source_repository": "https://github.com/daniileliseev1337/claude-base",
       "source_commit": "d263065d902000a032c87bd31175889168f616bc"
     },
@@ -406,7 +406,7 @@
       "kind": "skill",
       "id": "web-access",
       "path": "skills/web-access",
-      "sha256": "56170aae0dd4480721bbdc9eb375634cc10c2f872c37379f4a941b494231b115",
+      "sha256": "6407f98d355bba273f68ad923adcc53a58ad17f27f622c58df8857696c1a5d37",
       "source_repository": "https://github.com/daniileliseev1337/claude-base",
       "source_commit": "d263065d902000a032c87bd31175889168f616bc"
     },
@@ -422,7 +422,7 @@
       "kind": "skill",
       "id": "yandex-disk-uploader",
       "path": "skills/yandex-disk-uploader",
-      "sha256": "6c05897e1e4a6aa4c631f275e0842106a216475b5a09880c71b1b8f195e3a13c",
+      "sha256": "8da7034863987e44338c8c478f23b7a56de8d8da8533ed597255cf06dd148e64",
       "source_repository": "https://github.com/daniileliseev1337/claude-base",
       "source_commit": "d263065d902000a032c87bd31175889168f616bc"
     }

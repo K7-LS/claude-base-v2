@@ -142,8 +142,20 @@ def test_claude_migration_provenance_names_every_ported_component():
         path.parent.name
         for path in (ROOT / "skills").glob("*/SKILL.md")
     }
-    assert len(inventory["cold"]) == 22
+    assert len(inventory["cold"]) == 44
     assert all((ROOT / "cold" / path).is_file() for path in inventory["cold"])
+    catalog_cold = json.loads(
+        (ROOT / "catalog" / "cold.json").read_text(encoding="utf-8")
+    )
+    assert set(inventory["cold"]) == {
+        entry
+        for key in ("memory", "chains")
+        for entry in catalog_cold[key]
+    }
+    assert set(catalog_cold["memory"]) == {
+        f"memory/{path.name}"
+        for path in (ROOT / "cold" / "memory").glob("*.md")
+    }
     assert set(inventory["commands"]) == {
         path.stem for path in (ROOT / "commands").glob("*.md")
     }
