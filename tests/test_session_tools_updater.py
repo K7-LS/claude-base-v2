@@ -726,6 +726,33 @@ def test_created_partial_staging_with_nested_reparse_is_preserved_and_blocked(
     assert "BLOCKED_SESSION_RECOVERY" in (state_root / "events.log").read_text(encoding="utf-8")
 
 
+@pytest.mark.parametrize("host", _powershells(), ids=lambda value: Path(value).stem)
+def test_created_regular_file_staging_is_preserved_and_blocked(
+    host: str, tmp_path: Path, fake_gh: Path
+) -> None:
+    """The exact staging leaf must be a real directory, never a regular file."""
+    environment, home, _ = _environment(tmp_path, fake_gh)
+    environment["PATH"] = str(tmp_path / "empty-path")
+    state_root, staging, previous, destination, journal = _seed_move_crash_window(
+        home, has_previous=False, phase="created", actual_step=0
+    )
+    shutil.rmtree(staging)
+    staging_bytes = b"regular-file-staging\n"
+    staging.write_bytes(staging_bytes)
+    journal_path = state_root / "active-transaction.json"
+    journal_path.write_bytes(_json_bytes(journal))
+
+    result = _run(host, environment, "-HookFallback")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert staging.is_file()
+    assert staging.read_bytes() == staging_bytes
+    assert not previous.exists()
+    assert not destination.exists()
+    assert journal_path.exists()
+    assert "BLOCKED_SESSION_RECOVERY" in (state_root / "events.log").read_text(encoding="utf-8")
+
+
 @pytest.mark.parametrize(
     ("has_previous", "phase", "actual_step"),
     [

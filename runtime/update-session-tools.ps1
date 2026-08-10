@@ -701,6 +701,15 @@ function Remove-JournalEntry {
     }
 }
 
+function Remove-JournalDirectory {
+    param([string]$Path)
+    if (Test-ReparseTree $Path) { throw 'reparse path' }
+    if (Test-Path -LiteralPath $Path -PathType Leaf) { throw 'directory path is a file' }
+    if (Test-Path -LiteralPath $Path -PathType Container) {
+        Remove-Item -LiteralPath $Path -Recurse -Force
+    }
+}
+
 function Invoke-JournalRecovery {
     if (-not (Test-Path -LiteralPath $JournalPath -PathType Leaf)) { return $true }
     try {
@@ -720,6 +729,10 @@ function Invoke-JournalRecovery {
         if ($Journal.phase -ceq 'created') {
             if ($DestinationNow -cne $OldDestination -or $PreviousNow -cne 'absent' -or
                 $StateNow -cne $OldState) { throw 'created journal layout differs' }
+            if ($StagingNow -cne 'absent' -and
+                -not (Test-Path -LiteralPath ([string]$Journal.staging_path) -PathType Container)) {
+                throw 'created staging is not a directory'
+            }
             $ActualStep = 0
         } else {
             $DurableStep = if ([bool]$Journal.operations.write_state.applied) { 3 } elseif (
@@ -743,7 +756,13 @@ function Invoke-JournalRecovery {
             if ($ActualStep -ge 1 -and $OldDestination -cne 'absent') {
                 Move-Item -LiteralPath $Journal.previous_path -Destination $Journal.destination_path
             }
-            if ($StagingNow -ne 'absent') { Remove-JournalEntry ([string]$Journal.staging_path) }
+            if ($StagingNow -ne 'absent') {
+                if ($Journal.phase -ceq 'created') {
+                    Remove-JournalDirectory ([string]$Journal.staging_path)
+                } else {
+                    Remove-JournalEntry ([string]$Journal.staging_path)
+                }
+            }
         }
         if ((Get-Fingerprint ([string]$Journal.destination_path)) -cne $(if ($ActualStep -eq 3) { $NewDestination } else { $OldDestination }) -or
             (Get-Fingerprint ([string]$Journal.state_path)) -cne $(if ($ActualStep -eq 3) { $NewState } else { $OldState }) -or
