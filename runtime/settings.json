@@ -9,7 +9,7 @@
           {
             "type": "command",
             "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"$env:USERPROFILE\\.claude\\base\\runtime\\hooks\\check-release.ps1\"",
-            "timeout": 8
+            "timeout": 40
           }
         ]
       }

@@ -2,13 +2,6 @@ $ErrorActionPreference = 'Stop'
 $Utf8NoBom = New-Object Text.UTF8Encoding($false)
 [Console]::OutputEncoding = $Utf8NoBom
 $OutputEncoding = $Utf8NoBom
-$ConnectionRuntime = Join-Path (
-    Split-Path -Parent $PSScriptRoot
-) 'connection.ps1'
-if (-not (Test-Path -LiteralPath $ConnectionRuntime -PathType Leaf)) {
-    exit 0
-}
-. $ConnectionRuntime
 
 function Write-Utf8NoBom {
     param([string]$Path, [string]$Text)
@@ -16,22 +9,24 @@ function Write-Utf8NoBom {
     [IO.File]::WriteAllText($Path, $Text, $Encoding)
 }
 
-try {
+function Get-DailyReleaseMessage {
+    $ConnectionRuntime = Join-Path (Split-Path -Parent $PSScriptRoot) 'connection.ps1'
+    if (-not (Test-Path -LiteralPath $ConnectionRuntime -PathType Leaf)) { return $null }
+    . $ConnectionRuntime
     $BaseHome = Join-Path $env:USERPROFILE '.claude\base'
     $VersionPath = Join-Path $BaseHome 'VERSION'
-    if (-not (Test-Path -LiteralPath $VersionPath -PathType Leaf)) { exit 0 }
+    if (-not (Test-Path -LiteralPath $VersionPath -PathType Leaf)) { return $null }
 
     $StateRoot = Join-Path $BaseHome 'state'
     $StatePath = Join-Path $StateRoot 'update-check.json'
     $Now = [DateTimeOffset]::UtcNow
     if (Test-Path -LiteralPath $StatePath -PathType Leaf) {
         try {
-            $State = Get-Content -LiteralPath $StatePath -Raw -Encoding UTF8 |
-                ConvertFrom-Json
+            $State = Get-Content -LiteralPath $StatePath -Raw -Encoding UTF8 | ConvertFrom-Json
             $Checked = [DateTimeOffset]::Parse([string]$State.checked_at)
-            if (($Now - $Checked).TotalHours -lt 24) { exit 0 }
+            if (($Now - $Checked).TotalHours -lt 24) { return $null }
         } catch {
-            # A corrupt TTL file is replaced by the next successful check.
+            # Следующая успешная проверка заменит повреждённый TTL-файл.
         }
     }
 
@@ -58,18 +53,35 @@ try {
         latest_tag = if ($Stable) { [string]$Stable.tag_name } else { $null }
     } | ConvertTo-Json -Compress
     Write-Utf8NoBom $StatePath ($StatePayload + "`n")
-    if (-not $Stable) { exit 0 }
+    if (-not $Stable) { return $null }
 
-    $CurrentText = (
-        Get-Content -LiteralPath $VersionPath -Raw -Encoding UTF8
-    ).Trim()
+    $CurrentText = (Get-Content -LiteralPath $VersionPath -Raw -Encoding UTF8).Trim()
     $LatestText = ([string]$Stable.tag_name) -replace '^claude-v', ''
-    if ([version]$LatestText -le [version]$CurrentText) { exit 0 }
+    if ([version]$LatestText -le [version]$CurrentText) { return $null }
+    return "Claude-base $LatestText is available. Run `$sync-base to verify and install it."
+}
 
-    [ordered]@{
-        systemMessage = "Claude-base $LatestText is available. Run `$sync-base to verify and install it."
-    } | ConvertTo-Json -Compress
+$Messages = New-Object 'Collections.Generic.List[string]'
+try {
+    $Updater = Join-Path (Split-Path -Parent $PSScriptRoot) 'update-session-tools.ps1'
+    if (Test-Path -LiteralPath $Updater -PathType Leaf) {
+        $UpdaterOutput = @(& $Updater -HookFallback 2>$null)
+        if ($UpdaterOutput -ccontains 'TOOLS_APPLIED_NEXT_SESSION') {
+            [void]$Messages.Add('Session tools were updated and will be available in the next session.')
+        }
+    }
 } catch {
-    # A notification check must never block session startup.
+    # Сессионное обновление не блокирует прямой запуск Claude.
+}
+
+try {
+    $ReleaseMessage = Get-DailyReleaseMessage
+    if ($ReleaseMessage) { [void]$Messages.Add($ReleaseMessage) }
+} catch {
+    # Проверка уведомления не блокирует запуск сессии.
+}
+
+if ($Messages.Count -gt 0) {
+    [ordered]@{ systemMessage = ($Messages -join ' ') } | ConvertTo-Json -Compress
 }
 exit 0
