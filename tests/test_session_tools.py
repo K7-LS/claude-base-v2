@@ -97,6 +97,35 @@ def test_manifest_parser_rejects_duplicate_json_keys():
 
 
 @pytest.mark.parametrize(
+    ("overrides", "error"),
+    [
+        ({"schema_version": True}, "schema version"),
+        ({"release_tag": "claude-v9.9.9"}, "release tag"),
+    ],
+)
+def test_manifest_parser_rejects_bool_schema_and_mismatched_release_tag(
+    overrides: dict[str, object],
+    error: str,
+):
+    tool = {"id": "style", "files": [_file_record("SKILL.md", b"x")]}
+
+    with pytest.raises(ValueError, match=error):
+        session_tools.validate_session_tools_manifest(
+            _json_bytes(_manifest([tool], **overrides))
+        )
+
+
+def test_manifest_parser_rejects_bool_file_size():
+    tool = {
+        "id": "style",
+        "files": [{"path": "SKILL.md", "sha256": "0" * 64, "bytes": True}],
+    }
+
+    with pytest.raises(ValueError, match="file size"):
+        session_tools.validate_session_tools_manifest(_json_bytes(_manifest([tool])))
+
+
+@pytest.mark.parametrize(
     "tools",
     [
         [
@@ -170,6 +199,29 @@ def test_archive_rejects_duplicate_members_symlinks_and_tampered_bytes(tmp_path:
     _write_archive(tampered, manifest, {"tools/style/SKILL.md": b"alter"})
     with pytest.raises(ValueError, match="SHA-256"):
         session_tools.validate_session_tools_archive(tampered)
+
+
+def test_archive_rejects_exact_and_case_only_duplicate_members(tmp_path: Path):
+    payload = b"skill"
+    tool = {"id": "style", "files": [_file_record("SKILL.md", payload)]}
+    manifest = _json_bytes(_manifest([tool]))
+
+    exact = tmp_path / "exact-duplicate.zip"
+    with pytest.warns(UserWarning, match="Duplicate name"):
+        with zipfile.ZipFile(exact, "w") as archive:
+            archive.writestr("session-tools-manifest.json", manifest)
+            archive.writestr("tools/style/SKILL.md", payload)
+            archive.writestr("tools/style/SKILL.md", payload)
+    with pytest.raises(ValueError, match="duplicate"):
+        session_tools.validate_session_tools_archive(exact)
+
+    case_only = tmp_path / "case-only-duplicate.zip"
+    with zipfile.ZipFile(case_only, "w") as archive:
+        archive.writestr("session-tools-manifest.json", manifest)
+        archive.writestr("tools/style/SKILL.md", payload)
+        archive.writestr("tools/style/skill.md", payload)
+    with pytest.raises(ValueError, match="case collision"):
+        session_tools.validate_session_tools_archive(case_only)
 
 
 def test_archive_rejects_executable_member_and_manifest_hash_tamper(tmp_path: Path):

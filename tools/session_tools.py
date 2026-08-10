@@ -102,14 +102,21 @@ def validate_session_tools_manifest(payload: bytes) -> dict[str, object]:
         {"schema_version", "target", "release_tag", "base_version", "tools"},
         "session tools manifest",
     )
-    if manifest["schema_version"] != 1:
+    if (
+        not isinstance(manifest["schema_version"], int)
+        or isinstance(manifest["schema_version"], bool)
+        or manifest["schema_version"] != 1
+    ):
         raise ValueError("session tools manifest schema version differs")
     if manifest["target"] != "claude":
         raise ValueError("session tools manifest target differs")
-    if not isinstance(manifest["release_tag"], str) or not manifest["release_tag"]:
-        raise ValueError("session tools manifest release tag is invalid")
     if not isinstance(manifest["base_version"], str) or not manifest["base_version"]:
         raise ValueError("session tools manifest base version is invalid")
+    if (
+        not isinstance(manifest["release_tag"], str)
+        or manifest["release_tag"] != f"claude-v{manifest['base_version']}"
+    ):
+        raise ValueError("session tools manifest release tag differs")
     tools = manifest["tools"]
     if not isinstance(tools, list) or len(tools) > MAX_TOOLS:
         raise ValueError("session tools manifest tool limit exceeded")
@@ -192,6 +199,8 @@ def validate_session_tools_archive(
             names = [info.filename for info in infos]
             if names.count(MANIFEST_NAME) != 1:
                 raise ValueError("session tools manifest is missing or duplicated")
+            if len(names) != len(set(names)):
+                raise ValueError("session tools ZIP has a duplicate entry")
             normalized_names: set[str] = set()
             for info in infos:
                 unsafe = _zip_info_is_unsafe(info)

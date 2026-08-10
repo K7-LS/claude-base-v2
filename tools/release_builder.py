@@ -21,6 +21,8 @@ try:
         session_tools_asset_record,
         session_tools_baseline_entries,
         validate_session_tools_asset_record,
+        validate_session_tools_archive,
+        validate_session_tools_manifest,
     )
 except ModuleNotFoundError as error:
     if error.name != "tools":
@@ -32,6 +34,8 @@ except ModuleNotFoundError as error:
         session_tools_asset_record,
         session_tools_baseline_entries,
         validate_session_tools_asset_record,
+        validate_session_tools_archive,
+        validate_session_tools_manifest,
     )
 
 
@@ -95,9 +99,19 @@ def release_binding_from_manifest(
         )
     binding = {name: manifest[name] for name in required}
     if "session_tools_asset" in manifest:
-        binding["session_tools_asset"] = validate_session_tools_asset_record(
+        session_asset = validate_session_tools_asset_record(
             manifest["session_tools_asset"]
         )
+        version = manifest["version"]
+        if (
+            manifest["target"] != "claude"
+            or not isinstance(version, str)
+            or manifest["tag"] != f"claude-v{version}"
+        ):
+            raise ValueError("session tools parent release identity differs")
+        if session_asset["name"] != f"session-tools-claude-{version}.zip":
+            raise ValueError("session tools asset name differs from parent version")
+        binding["session_tools_asset"] = session_asset
     return binding
 
 
@@ -408,6 +422,8 @@ def build_component_lock(
     repo_root: Path,
     version: str,
     identity: dict[str, str],
+    *,
+    excluded_skill_ids: frozenset[str] = frozenset(),
 ) -> dict[str, object]:
     migration = _load_json(repo_root / "MIGRATION-SOURCE.json")
     source = migration["source"]
@@ -450,6 +466,7 @@ def build_component_lock(
                 provenance,
             )
             for row in skills
+            if str(row["id"]) not in excluded_skill_ids
         ],
         "control_skills": [
             _component(repo_root, path.name, _tree_files(path), provenance)
@@ -547,6 +564,58 @@ def _write_zip(path: Path, entries: dict[str, bytes]) -> None:
             archive.writestr(info, entries[name])
 
 
+def _validate_session_tools_parent(
+    bundle: SessionToolsBuild,
+    *,
+    target: str,
+    version: str,
+    tag: str,
+) -> None:
+    manifest = bundle.manifest
+    if manifest.get("target") != target:
+        raise ValueError("session tools manifest target differs from parent")
+    if manifest.get("release_tag") != tag:
+        raise ValueError("session tools manifest release tag differs from parent")
+    if manifest.get("base_version") != version:
+        raise ValueError("session tools manifest base version differs from parent")
+    if bundle.zip_path.name != f"session-tools-{target}-{version}.zip":
+        raise ValueError("session tools asset name differs from parent version")
+    parsed = validate_session_tools_manifest(bundle.manifest_bytes)
+    if parsed != manifest:
+        raise ValueError("session tools manifest bytes differ from built manifest")
+    if validate_session_tools_archive(
+        bundle.zip_path,
+        manifest_sha256=_sha256(bundle.manifest_bytes),
+    ) != manifest:
+        raise ValueError("session tools archive manifest differs")
+
+
+def _validate_session_tools_baseline(
+    bundle: SessionToolsBuild,
+    entries: dict[str, bytes],
+) -> None:
+    expected = {BASELINE_MANIFEST_PATH}
+    if entries.get(BASELINE_MANIFEST_PATH) != bundle.manifest_bytes:
+        raise ValueError("session tools baseline manifest differs")
+    for tool in bundle.manifest["tools"]:
+        if not isinstance(tool, dict):
+            raise ValueError("session tools baseline tool differs")
+        for record in tool["files"]:
+            if not isinstance(record, dict):
+                raise ValueError("session tools baseline file differs")
+            name = f"session-tools-baseline/tools/{tool['id']}/{record['path']}"
+            expected.add(name)
+            payload = entries.get(name)
+            if (
+                payload is None
+                or len(payload) != record["bytes"]
+                or _sha256(payload) != record["sha256"]
+            ):
+                raise ValueError("session tools baseline payload differs")
+    if set(entries) != expected:
+        raise ValueError("session tools baseline layout differs")
+
+
 def build_release_from_source(
     repo_root: Path,
     dist_root: Path,
@@ -565,14 +634,28 @@ def build_release_from_source(
         raise ValueError("managed surface target differs")
     paths = contract["paths"]
     install_root = str(paths["install_root"])
-    component_lock = build_component_lock(repo_root, version, identity)
-    lock_bytes = _json_bytes(component_lock)
     session_tools = build_session_tools_bundle(repo_root, dist_root, version)
+    parent_tag = f"{contract['tag_prefix']}{version}"
+    _validate_session_tools_parent(
+        session_tools,
+        target=str(contract["target"]),
+        version=version,
+        tag=parent_tag,
+    )
     session_tool_ids = frozenset(
         str(tool["id"])
         for tool in session_tools.manifest["tools"]
         if isinstance(tool, dict)
     )
+    component_lock = build_component_lock(
+        repo_root,
+        version,
+        identity,
+        excluded_skill_ids=session_tool_ids,
+    )
+    lock_bytes = _json_bytes(component_lock)
+    baseline_entries = session_tools_baseline_entries(session_tools)
+    _validate_session_tools_baseline(session_tools, baseline_entries)
 
     entries: dict[str, bytes] = {}
     _add(entries, str(paths["hot_destination"]), (repo_root / str(paths["hot_source"])).read_bytes())
@@ -587,7 +670,7 @@ def build_release_from_source(
         exclude_roots=session_tool_ids,
     )
     _add_tree(entries, repo_root / "control-skills", f"{install_root}/skills")
-    for path, payload in session_tools_baseline_entries(session_tools).items():
+    for path, payload in baseline_entries.items():
         _add(entries, path, payload)
     _add_tree(entries, repo_root / "commands", f"{install_root}/commands")
     _add_tree(entries, repo_root / "cold", f"{install_root}/base/cold")
@@ -649,7 +732,7 @@ def build_release_from_source(
         "schema_version": 1,
         "target": target,
         "version": version,
-        "tag": f"{contract['tag_prefix']}{version}",
+        "tag": parent_tag,
         "channel": "candidate",
         "client": {
             "id": contract["client"]["id"],

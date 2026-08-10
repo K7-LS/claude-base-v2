@@ -213,7 +213,7 @@ def test_native_release_is_deterministic_complete_and_one_way(tmp_path: Path):
 
     lock = json.loads(first.component_lock_path.read_text(encoding="utf-8"))
     assert len(lock["components"]["agents"]) == 16
-    assert len(lock["components"]["skills"]) == 38
+    assert len(lock["components"]["skills"]) == 37
     assert len(lock["components"]["control_skills"]) == 1
     assert len(lock["components"]["commands"]) == 3
     assert len(lock["components"]["cold"]) == 23
@@ -274,6 +274,129 @@ def test_release_binds_session_asset_and_keeps_session_skill_out_of_base(
             "ru-writing-style"
         ]
         assert "session-tools-baseline/tools/ru-writing-style/SKILL.md" in names
+
+
+def test_release_binding_rejects_session_asset_name_not_bound_to_parent_version():
+    manifest = {
+        "target": "claude",
+        "version": "0.1.1",
+        "tag": "claude-v0.1.1",
+        "client": {"id": "claude-code", "supported_version": "2.1.218"},
+        "asset": {"name": "claude-base-0.1.1.zip"},
+        "package_manifest_sha256": "1" * 64,
+        "components_lock_sha256": "2" * 64,
+        "source": {"commit": "3" * 40},
+        "foundation_engine_version": "0.1.0",
+        "foundation_engine_manifest_sha256": "4" * 64,
+        "session_tools_asset": {
+            "name": "session-tools-claude-9.9.9.zip",
+            "sha256": "5" * 64,
+            "bytes": 1,
+            "manifest_sha256": "6" * 64,
+            "tool_count": 1,
+            "file_count": 1,
+        },
+    }
+
+    with pytest.raises(ValueError, match="asset name"):
+        release_builder.release_binding_from_manifest(manifest)
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "error"),
+    [
+        ("release_tag", "claude-v9.9.9", "release tag"),
+        ("base_version", "9.9.9", "base version"),
+    ],
+)
+def test_release_rejects_internal_session_manifest_not_bound_to_parent(
+    tmp_path: Path,
+    monkeypatch,
+    field: str,
+    value: str,
+    error: str,
+):
+    source, contract = _accepted_source(tmp_path)
+    foundation = _fake_foundation(tmp_path / "foundation")
+    identity = {
+        "repository": contract["repository"],
+        "commit": "a" * 40,
+        "tree": "b" * 40,
+        "transformation": contract["transformation"],
+    }
+    original = release_builder.build_session_tools_bundle
+
+    def mismatched(*args, **kwargs):
+        bundle = original(*args, **kwargs)
+        bundle.manifest[field] = value
+        return bundle
+
+    monkeypatch.setattr(release_builder, "build_session_tools_bundle", mismatched)
+
+    with pytest.raises(ValueError, match=error):
+        release_builder.build_release_from_source(
+            source,
+            tmp_path / "release",
+            "0.1.1",
+            foundation,
+            identity,
+        )
+
+
+def test_release_rejects_tampered_session_baseline_payload(
+    tmp_path: Path,
+    monkeypatch,
+):
+    source, contract = _accepted_source(tmp_path)
+    foundation = _fake_foundation(tmp_path / "foundation")
+    identity = {
+        "repository": contract["repository"],
+        "commit": "a" * 40,
+        "tree": "b" * 40,
+        "transformation": contract["transformation"],
+    }
+    original = release_builder.session_tools_baseline_entries
+
+    def tampered(bundle):
+        entries = original(bundle)
+        entries["session-tools-baseline/tools/ru-writing-style/SKILL.md"] = b"tampered"
+        return entries
+
+    monkeypatch.setattr(release_builder, "session_tools_baseline_entries", tampered)
+
+    with pytest.raises(ValueError, match="baseline"):
+        release_builder.build_release_from_source(
+            source,
+            tmp_path / "release",
+            "0.1.1",
+            foundation,
+            identity,
+        )
+
+
+def test_release_component_lock_excludes_session_owned_skill(tmp_path: Path):
+    source, contract = _accepted_source(tmp_path)
+    foundation = _fake_foundation(tmp_path / "foundation")
+    identity = {
+        "repository": contract["repository"],
+        "commit": "a" * 40,
+        "tree": "b" * 40,
+        "transformation": contract["transformation"],
+    }
+    built = release_builder.build_release_from_source(
+        source,
+        tmp_path / "release",
+        "0.1.1",
+        foundation,
+        identity,
+    )
+    component_lock = json.loads(
+        built.component_lock_path.read_text(encoding="utf-8")
+    )
+
+    assert "ru-writing-style" not in {
+        component["id"] for component in component_lock["components"]["skills"]
+    }
 
 
 def test_release_owns_each_base_skill_without_claiming_unknown_local_skills(
