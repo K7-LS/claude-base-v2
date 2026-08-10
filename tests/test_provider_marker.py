@@ -11,6 +11,7 @@ import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]
+FROZEN_ELIGIBILITY_NOW = datetime(2026, 7, 27, 12, 0, tzinfo=timezone.utc)
 SPEC = importlib.util.spec_from_file_location(
     "claude_provider_marker",
     ROOT / "tools" / "provider_marker.py",
@@ -44,11 +45,33 @@ def _eligibility(recorded: str) -> dict[str, object]:
     return value
 
 
+@pytest.fixture
+def frozen_eligibility_now(monkeypatch) -> datetime:
+    real_validate_eligibility = marker.validate_eligibility
+
+    def validate_with_frozen_now(
+        evidence: dict[str, object], *, now: datetime | None = None
+    ) -> str:
+        return real_validate_eligibility(
+            evidence,
+            now=FROZEN_ELIGIBILITY_NOW if now is None else now,
+        )
+
+    monkeypatch.setattr(
+        marker,
+        "validate_eligibility",
+        validate_with_frozen_now,
+    )
+    return FROZEN_ELIGIBILITY_NOW
+
+
 def test_eligibility_is_pii_free_current_and_owner_attested():
-    now = datetime(2026, 7, 27, 12, 0, tzinfo=timezone.utc)
     evidence = _eligibility("2026-07-26T12:00:00Z")
 
-    digest = marker.validate_eligibility(evidence, now=now)
+    digest = marker.validate_eligibility(
+        evidence,
+        now=FROZEN_ELIGIBILITY_NOW,
+    )
 
     assert digest == evidence["evidence_body_sha256"]
     assert evidence["privacy"]["employee_name_included"] is False
@@ -60,7 +83,7 @@ def test_eligibility_older_than_seven_days_is_rejected():
     with pytest.raises(ValueError, match="seven days"):
         marker.validate_eligibility(
             _eligibility("2026-07-19T11:59:59Z"),
-            now=datetime(2026, 7, 27, 12, 0, tzinfo=timezone.utc),
+            now=FROZEN_ELIGIBILITY_NOW,
         )
 
 
@@ -90,7 +113,9 @@ def test_marker_command_disables_tools_and_session_persistence(tmp_path: Path):
     ]
 
 
-def test_marker_summary_contains_hash_usage_and_no_response_or_identity():
+def test_marker_summary_contains_hash_usage_and_no_response_or_identity(
+    frozen_eligibility_now: datetime,
+):
     eligibility = _eligibility("2026-07-26T12:00:00Z")
     result = {
         "type": "result",
@@ -120,7 +145,9 @@ def test_marker_summary_contains_hash_usage_and_no_response_or_identity():
     assert marker.EXPECTED_RESPONSE not in json.dumps(evidence)
 
 
-def test_failed_marker_writes_hash_only_privacy_safe_evidence():
+def test_failed_marker_writes_hash_only_privacy_safe_evidence(
+    frozen_eligibility_now: datetime,
+):
     eligibility = _eligibility("2026-07-26T12:00:00Z")
     stdout = json.dumps(
         {
@@ -170,7 +197,9 @@ def test_failed_marker_writes_hash_only_privacy_safe_evidence():
     }
 
 
-def test_failed_api_result_retains_only_safe_status_metadata():
+def test_failed_api_result_retains_only_safe_status_metadata(
+    frozen_eligibility_now: datetime,
+):
     eligibility = _eligibility("2026-07-26T12:00:00Z")
     stdout = json.dumps(
         {
@@ -201,7 +230,7 @@ def test_failed_api_result_retains_only_safe_status_metadata():
 
 
 def test_failed_marker_process_persists_not_pass_evidence(
-    monkeypatch, tmp_path
+    monkeypatch, tmp_path, frozen_eligibility_now: datetime
 ):
     eligibility_path = tmp_path / "eligibility.json"
     eligibility_path.write_text(
