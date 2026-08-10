@@ -102,8 +102,20 @@ def fake_gh(tmp_path_factory: pytest.TempPathFactory) -> Path:
                         return ExitCode("FAKE_GH_VERIFY_EXIT");
                     if (args.Length >= 2 && args[0] == "release" && args[1] == "verify-asset")
                         return ExitCode("FAKE_GH_VERIFY_ASSET_EXIT");
-                    if (args.Length >= 2 && args[0] == "attestation" && args[1] == "verify")
-                        return ExitCode("FAKE_GH_ATTEST_EXIT");
+                    if (args.Length >= 3 && args[0] == "attestation" && args[1] == "verify")
+                    {
+                        int exit = ExitCode("FAKE_GH_ATTEST_EXIT");
+                        if (exit != 0) return exit;
+                        string match = Environment.GetEnvironmentVariable("FAKE_GH_MUTATE_AFTER_ATTEST_MATCH");
+                        if (!String.IsNullOrEmpty(match) && args[2].IndexOf(match, StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            string source = Environment.GetEnvironmentVariable("FAKE_GH_MUTATE_SOURCE");
+                            string target = Environment.GetEnvironmentVariable("FAKE_GH_MUTATE_TARGET");
+                            try { File.Copy(source, target, true); }
+                            catch (Exception) { return 93; }
+                        }
+                        return 0;
+                    }
                     if (args.Length >= 2 && args[0] == "release" && args[1] == "download")
                     {
                         int patternIndex = Array.IndexOf(args, "--pattern");
@@ -236,6 +248,7 @@ def _environment(tmp_path: Path, fake_gh: Path) -> tuple[dict[str, str], Path, d
                     "tagName": TAG,
                     "isDraft": False,
                     "isPrerelease": False,
+                    "isImmutable": True,
                     "publishedAt": "2026-08-10T00:00:00Z",
                 }
             ]
@@ -254,6 +267,25 @@ def _run(host: str, environment: dict[str, str], *arguments: str, timeout: int =
         encoding="utf-8",
         timeout=timeout,
     )
+
+
+def _stopwatch(host: str) -> tuple[int, int]:
+    result = subprocess.run(
+        [
+            host,
+            "-NoLogo",
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            "[Console]::Write(('{0},{1}' -f [Diagnostics.Stopwatch]::GetTimestamp(),[Diagnostics.Stopwatch]::Frequency))",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    tick, frequency = result.stdout.split(",")
+    return int(tick), int(frequency)
 
 
 def _seed_killed_apply(home: Path) -> tuple[Path, Path, Path, dict]:
@@ -389,7 +421,7 @@ def test_verified_session_asset_is_applied_with_cyrillic_and_exact_state(
     ).exists()
     calls = (tmp_path / "gh.log").read_text(encoding="utf-8").splitlines()
     assert calls == [
-        f"release\tlist\t--repo\t{REPOSITORY}\t--limit\t20\t--json\ttagName,isDraft,isPrerelease,publishedAt",
+        f"release\tlist\t--repo\t{REPOSITORY}\t--limit\t20\t--json\ttagName,isDraft,isPrerelease,isImmutable,publishedAt",
         f"release\tverify\t{TAG}\t--repo\t{REPOSITORY}",
         f"release\tdownload\t{TAG}\t--repo\t{REPOSITORY}\t--pattern\trelease-manifest.json\t--dir\t{home / '.llm-foundation' / 'state' / 'session-tools' / 'claude' / 'downloads'}",
         f"release\tverify-asset\t{TAG}\trelease-manifest.json\t--repo\t{REPOSITORY}",
@@ -398,6 +430,86 @@ def test_verified_session_asset_is_applied_with_cyrillic_and_exact_state(
         f"release\tverify-asset\t{TAG}\tsession-tools-claude-{VERSION}.zip\t--repo\t{REPOSITORY}",
         f"attestation\tverify\t{home / '.llm-foundation' / 'state' / 'session-tools' / 'claude' / 'downloads' / f'session-tools-claude-{VERSION}.zip'}\t--repo\t{REPOSITORY}",
     ]
+
+
+@pytest.mark.parametrize("host", _powershells(), ids=lambda value: Path(value).stem)
+def test_mutable_stable_release_is_rejected_before_verification(
+    host: str, tmp_path: Path, fake_gh: Path
+) -> None:
+    """A stable tag is trusted only when GitHub reports exact immutable state."""
+    environment, home, _ = _environment(tmp_path, fake_gh)
+    releases = json.loads(environment["FAKE_GH_RELEASES_JSON"])
+    releases[0]["isImmutable"] = False
+    environment["FAKE_GH_RELEASES_JSON"] = json.dumps(releases)
+
+    result = _run(host, environment, "-HookFallback")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert not (home / ".claude" / "skills").exists()
+    assert "REJECTED_RELEASE_LIST" in (
+        home / ".llm-foundation" / "state" / "session-tools" / "claude" / "events.log"
+    ).read_text(encoding="utf-8")
+    calls = (tmp_path / "gh.log").read_text(encoding="utf-8").splitlines()
+    assert calls == [
+        f"release\tlist\t--repo\t{REPOSITORY}\t--limit\t20\t--json\t"
+        "tagName,isDraft,isPrerelease,isImmutable,publishedAt"
+    ]
+
+
+@pytest.mark.parametrize("host", _powershells(), ids=lambda value: Path(value).stem)
+def test_release_list_rejects_non_rfc_json_whitespace(
+    host: str, tmp_path: Path, fake_gh: Path
+) -> None:
+    """Only JSON whitespace from RFC 8259 may occur outside strings."""
+    environment, home, _ = _environment(tmp_path, fake_gh)
+    environment["FAKE_GH_RELEASES_JSON"] = environment["FAKE_GH_RELEASES_JSON"].replace(
+        "[", "[\u00a0", 1
+    )
+
+    result = _run(host, environment, "-HookFallback")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert not (home / ".claude" / "skills").exists()
+    assert "REJECTED_RELEASE_LIST" in (
+        home / ".llm-foundation" / "state" / "session-tools" / "claude" / "events.log"
+    ).read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("host", _powershells(), ids=lambda value: Path(value).stem)
+def test_verified_manifest_handle_detects_late_external_replacement(
+    host: str, tmp_path: Path, fake_gh: Path
+) -> None:
+    """Later gh processes cannot replace bytes that already passed attestation."""
+    environment, home, fixture = _environment(tmp_path, fake_gh)
+    fixture_root = Path(environment["FAKE_GH_FIXTURE_ROOT"])
+    mutated = json.loads(json.dumps(fixture["release"]))
+    mutated["acceptance_evidence_sha256"] = "8" * 64
+    mutation_source = fixture_root / "mutated-release-manifest.json"
+    mutation_source.write_bytes(_json_bytes(mutated))
+    downloaded_manifest = (
+        home
+        / ".llm-foundation"
+        / "state"
+        / "session-tools"
+        / "claude"
+        / "downloads"
+        / "release-manifest.json"
+    )
+    environment.update(
+        {
+            "FAKE_GH_MUTATE_AFTER_ATTEST_MATCH": f"session-tools-claude-{VERSION}.zip",
+            "FAKE_GH_MUTATE_SOURCE": str(mutation_source),
+            "FAKE_GH_MUTATE_TARGET": str(downloaded_manifest),
+        }
+    )
+
+    result = _run(host, environment, "-HookFallback")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert not (home / ".claude" / "skills").exists()
+    assert "REJECTED_VERIFICATION" in (
+        home / ".llm-foundation" / "state" / "session-tools" / "claude" / "events.log"
+    ).read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize("host", _powershells(), ids=lambda value: Path(value).stem)
@@ -523,6 +635,31 @@ def test_exact_package_baseline_recovers_missing_ownership_state(
         .read_text(encoding="utf-8")
     )
     assert state["tools"][0]["ownership_marker"] == "session-tools-v1:claude:ru-writing-style"
+
+
+@pytest.mark.parametrize("host", _powershells(), ids=lambda value: Path(value).stem)
+def test_newer_package_baseline_blocks_session_channel_downgrade(
+    host: str, tmp_path: Path, fake_gh: Path
+) -> None:
+    """Missing state must not let an older remote release replace a newer baseline."""
+    environment, home, fixture = _environment(tmp_path, fake_gh)
+    destination = home / ".claude" / "skills" / "ru-writing-style"
+    destination.mkdir(parents=True)
+    (destination / "SKILL.md").write_bytes(fixture["payload"])
+    baseline_value = json.loads(json.dumps(fixture["session"]))
+    baseline_value["base_version"] = "0.2.0"
+    baseline_value["release_tag"] = "claude-v0.2.0"
+    baseline = home / ".claude" / "base" / "runtime" / "session-tools-baseline.json"
+    baseline.parent.mkdir(parents=True)
+    baseline.write_bytes(_json_bytes(baseline_value))
+
+    result = _run(host, environment, "-HookFallback")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (destination / "SKILL.md").read_bytes() == fixture["payload"]
+    state_root = home / ".llm-foundation" / "state" / "session-tools" / "claude"
+    assert not (state_root / "state.json").exists()
+    assert "BLOCKED_NO_DOWNGRADE" in (state_root / "events.log").read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize("host", _powershells(), ids=lambda value: Path(value).stem)
@@ -753,6 +890,57 @@ def test_created_regular_file_staging_is_preserved_and_blocked(
     assert "BLOCKED_SESSION_RECOVERY" in (state_root / "events.log").read_text(encoding="utf-8")
 
 
+@pytest.mark.parametrize("host", _powershells(), ids=lambda value: Path(value).stem)
+def test_expired_hard_deadline_preserves_recovery_journal_and_blocks_managed_launch(
+    host: str, tmp_path: Path, fake_gh: Path
+) -> None:
+    """Recovery and cleanup cannot continue after the launcher's 30-second deadline."""
+    environment, home, _ = _environment(tmp_path, fake_gh)
+    environment["PATH"] = str(tmp_path / "empty-path")
+    state_root, staging, previous, destination, journal = _seed_move_crash_window(
+        home, has_previous=False, phase="created", actual_step=0
+    )
+    now, frequency = _stopwatch(host)
+    start = now - 31 * frequency
+    journal.update(
+        {
+            "start_tick": start,
+            "mutation_cutoff_tick": start + 22 * frequency,
+            "kill_tick": start + 25 * frequency,
+            "hard_deadline_tick": start + 30 * frequency,
+            "stopwatch_frequency": frequency,
+        }
+    )
+    journal_path = state_root / "active-transaction.json"
+    journal_path.write_bytes(_json_bytes(journal))
+
+    result = _run(
+        host,
+        environment,
+        "-ManagedPreflight",
+        "-TransactionId",
+        journal["transaction_id"],
+        "-StartTick",
+        str(start),
+        "-MutationCutoffTick",
+        str(start + 22 * frequency),
+        "-KillTick",
+        str(start + 25 * frequency),
+        "-HardDeadlineTick",
+        str(start + 30 * frequency),
+        "-StopwatchFrequency",
+        str(frequency),
+    )
+
+    assert result.returncode == 65, result.stdout + result.stderr
+    assert "BLOCKED_SESSION_RECOVERY" in result.stderr
+    assert staging.exists()
+    assert not previous.exists()
+    assert not destination.exists()
+    assert journal_path.exists()
+    assert not (tmp_path / "gh.log").exists()
+
+
 @pytest.mark.parametrize(
     ("has_previous", "phase", "actual_step"),
     [
@@ -862,6 +1050,15 @@ def test_journal_is_durable_before_staging_and_uses_launcher_clock() -> None:
         "expected_destination_sha256 = $ExpectedDirectory"
     ) in apply_source
     assert "$Journal.expected_staging_sha256" not in apply_source
+
+
+def test_success_cleanup_reuses_reparse_scanning_helper_and_hard_deadline() -> None:
+    """Committed cleanup must rescan previous and stay inside the 30-second contract."""
+    source = UPDATER.read_text(encoding="utf-8")
+    apply_source = source.split("function Apply-VerifiedTool", 1)[1].split("$Lock = $null", 1)[0]
+    assert "Remove-JournalEntry $Previous" in apply_source
+    assert "Remove-Item -LiteralPath $Previous -Recurse -Force" not in apply_source
+    assert "Assert-BeforeHardDeadline" in apply_source
 
 
 def test_native_runtime_does_not_modify_live_legacy_owner_automation(

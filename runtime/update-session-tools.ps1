@@ -91,7 +91,15 @@ namespace Foundation.SessionTools
             private int index;
             internal Parser(string value) { text = value; }
             internal bool End { get { return index == text.Length; } }
-            internal void White() { while (index < text.Length && Char.IsWhiteSpace(text[index])) index++; }
+            internal void White()
+            {
+                while (index < text.Length)
+                {
+                    char value = text[index];
+                    if (value != ' ' && value != '\t' && value != '\r' && value != '\n') break;
+                    index++;
+                }
+            }
             private char Take() { if (index >= text.Length) throw new FormatException("unexpected end"); return text[index++]; }
             private char Peek() { if (index >= text.Length) throw new FormatException("unexpected end"); return text[index]; }
             internal void Value()
@@ -552,6 +560,10 @@ function Assert-StateOwnership {
                     $Baseline.target -cne 'claude' -or $Baseline.base_version -isnot [string] -or
                     $Baseline.base_version -cnotmatch '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$' -or
                     $Baseline.release_tag -cne "claude-v$($Baseline.base_version)") { throw 'baseline identity differs' }
+                if ([version]([string]$Baseline.base_version) -gt
+                    [version]([string]$script:SelectedVersion)) {
+                    throw 'BLOCKED_NO_DOWNGRADE'
+                }
                 $BaselineTools = @($Baseline.tools)
                 if ($BaselineTools.Count -ne 1) { throw 'baseline tool count differs' }
                 $BaselineTool = $BaselineTools[0]
@@ -571,7 +583,10 @@ function Assert-StateOwnership {
                 if ((Get-Fingerprint $Destination) -cne (Get-ExpectedDirectoryFingerprint $BaselineFiles)) {
                     throw 'baseline fingerprint differs'
                 }
-            } catch { throw 'BLOCKED_UNMANAGED_COLLISION' }
+            } catch {
+                if ($_.Exception.Message -eq 'BLOCKED_NO_DOWNGRADE') { throw }
+                throw 'BLOCKED_UNMANAGED_COLLISION'
+            }
         }
         return
     }
@@ -710,9 +725,16 @@ function Remove-JournalDirectory {
     }
 }
 
+function Assert-BeforeHardDeadline {
+    if ([Diagnostics.Stopwatch]::GetTimestamp() -ge $HardDeadlineTick) {
+        throw 'SKIPPED_DEADLINE'
+    }
+}
+
 function Invoke-JournalRecovery {
     if (-not (Test-Path -LiteralPath $JournalPath -PathType Leaf)) { return $true }
     try {
+        Assert-BeforeHardDeadline
         $Journal = Read-StrictJsonFile $JournalPath
         Assert-JournalShape $Journal
         if ((Get-Sha256File $ReceiptPath) -cne [string]$Journal.receipt_sha256) { throw 'receipt differs' }
@@ -749,14 +771,25 @@ function Invoke-JournalRecovery {
         }
         if ($ActualStep -lt 0) { throw 'journal layout differs' }
         if ($ActualStep -eq 3) {
-            if ($PreviousNow -ne 'absent') { Remove-JournalEntry ([string]$Journal.previous_path) }
-            if ($StagingNow -ne 'absent') { Remove-JournalEntry ([string]$Journal.staging_path) }
+            if ($PreviousNow -ne 'absent') {
+                Assert-BeforeHardDeadline
+                Remove-JournalEntry ([string]$Journal.previous_path)
+            }
+            if ($StagingNow -ne 'absent') {
+                Assert-BeforeHardDeadline
+                Remove-JournalEntry ([string]$Journal.staging_path)
+            }
         } else {
-            if ($ActualStep -ge 2) { Remove-JournalEntry ([string]$Journal.destination_path) }
+            if ($ActualStep -ge 2) {
+                Assert-BeforeHardDeadline
+                Remove-JournalEntry ([string]$Journal.destination_path)
+            }
             if ($ActualStep -ge 1 -and $OldDestination -cne 'absent') {
+                Assert-BeforeHardDeadline
                 Move-Item -LiteralPath $Journal.previous_path -Destination $Journal.destination_path
             }
             if ($StagingNow -ne 'absent') {
+                Assert-BeforeHardDeadline
                 if ($Journal.phase -ceq 'created') {
                     Remove-JournalDirectory ([string]$Journal.staging_path)
                 } else {
@@ -770,8 +803,11 @@ function Invoke-JournalRecovery {
             (Get-Fingerprint ([string]$Journal.staging_path)) -cne 'absent') { throw 'recovery fingerprint differs' }
         $TransactionRoot = Split-Path -Parent ([string]$Journal.staging_path)
         if (Test-Path -LiteralPath $TransactionRoot) {
+            Assert-BeforeHardDeadline
+            if (Test-ReparseTree $TransactionRoot) { throw 'reparse path' }
             try { Remove-Item -LiteralPath $TransactionRoot -Force -ErrorAction Stop } catch { }
         }
+        Assert-BeforeHardDeadline
         Remove-Item -LiteralPath $JournalPath -Force
         return $true
     } catch {
@@ -858,8 +894,14 @@ function Apply-VerifiedTool {
         Set-JournalPhase $Journal 'state_write_applied' 'write_state' 'applied'
         Set-JournalPhase $Journal 'committed' '' ''
         if ((Get-Fingerprint $Destination) -cne $ExpectedDirectory -or (Get-Fingerprint $StatePath) -cne $Journal.expected_state_sha256) { throw 'committed fingerprints differ' }
-        if (Test-Path -LiteralPath $Previous) { Remove-Item -LiteralPath $Previous -Recurse -Force }
-        if (Test-Path -LiteralPath $TransactionRoot) { Remove-Item -LiteralPath $TransactionRoot -Force }
+        Assert-BeforeHardDeadline
+        if (Test-Path -LiteralPath $Previous) { Remove-JournalEntry $Previous }
+        Assert-BeforeHardDeadline
+        if (Test-Path -LiteralPath $TransactionRoot) {
+            if (Test-ReparseTree $TransactionRoot) { throw 'reparse path' }
+            Remove-Item -LiteralPath $TransactionRoot -Force
+        }
+        Assert-BeforeHardDeadline
         Remove-Item -LiteralPath $JournalPath -Force
     } catch {
         if ([Diagnostics.Stopwatch]::GetTimestamp() -lt $KillTick) { [void](Invoke-JournalRecovery) }
@@ -885,17 +927,21 @@ try {
     $GhCommand = Get-Command gh.exe -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
     if (-not $GhCommand) { Write-Event '-' 'BLOCKED_GH_REQUIRED' 'gh-missing'; exit 0 }
     $Gh = [string]$GhCommand.Source
-    $List = Invoke-BoundedProcess $Gh @('release', 'list', '--repo', $Repository, '--limit', '20', '--json', 'tagName,isDraft,isPrerelease,publishedAt') $MutationCutoffTick
+    $List = Invoke-BoundedProcess $Gh @('release', 'list', '--repo', $Repository, '--limit', '20', '--json', 'tagName,isDraft,isPrerelease,isImmutable,publishedAt') $MutationCutoffTick
     if ($List.TimedOut -or $List.ExitCode -ne 0) { Write-Event '-' 'SKIPPED_OFFLINE' 'release-list-failed'; exit 0 }
     try {
         [Foundation.SessionTools.StrictJsonGuard]::Validate([string]$List.Output)
         $Releases = @(([string]$List.Output | ConvertFrom-Json))
         $Stable = @()
         foreach ($Release in $Releases) {
-            Assert-ExactProperties $Release @('tagName', 'isDraft', 'isPrerelease', 'publishedAt') 'release list record'
+            Assert-ExactProperties $Release @('tagName', 'isDraft', 'isPrerelease', 'isImmutable', 'publishedAt') 'release list record'
             if ($Release.isDraft -isnot [bool] -or $Release.isPrerelease -isnot [bool] -or
+                $Release.isImmutable -isnot [bool] -or
                 $Release.tagName -cnotmatch '^claude-v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$') { throw 'release list record differs' }
-            if (-not $Release.isDraft -and -not $Release.isPrerelease) { $Stable += $Release }
+            if (-not $Release.isDraft -and -not $Release.isPrerelease) {
+                if (-not $Release.isImmutable) { throw 'release is mutable' }
+                $Stable += $Release
+            }
         }
         if ($Stable.Count -eq 0) { Write-Event '-' 'NO_STABLE_RELEASE' 'no-stable'; exit 0 }
         $Selected = $Stable | Sort-Object { [version](($_.tagName) -replace '^claude-v', '') } -Descending | Select-Object -First 1
@@ -943,6 +989,12 @@ try {
     $AttestAsset = Invoke-BoundedProcess $Gh @('attestation', 'verify', $AssetPath, '--repo', $Repository) $MutationCutoffTick
     if ($VerifyAsset.TimedOut -or $AttestAsset.TimedOut -or $VerifyAsset.ExitCode -ne 0 -or $AttestAsset.ExitCode -ne 0) { Write-Event $script:SelectedTag 'REJECTED_VERIFICATION' 'asset-attestation'; exit 0 }
     try {
+        $ReleaseManifestBytesAfterVerification = [IO.File]::ReadAllBytes($ReleaseManifestPath)
+        if ((Get-Sha256Bytes $ReleaseManifestBytesAfterVerification) -cne
+            (Get-Sha256Bytes $ReleaseManifestBytes)) {
+            throw 'verified manifest bytes changed'
+        }
+        $ReleaseManifestBytes = $ReleaseManifestBytesAfterVerification
         $ArchiveData = Read-SessionArchive $AssetPath $ReleaseManifest.session_tools_asset
         Apply-VerifiedTool $ArchiveData $ReleaseManifestBytes
     } catch {
