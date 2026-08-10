@@ -171,6 +171,28 @@ def test_claude_imports_the_approved_russian_writing_skill_verbatim():
     }
 
 
+def test_claude_managed_surface_owns_granular_skills_only():
+    managed = json.loads(
+        (ROOT / "runtime" / "managed-surface.json").read_text(encoding="utf-8")
+    )
+    exact = managed["exact_directories"]
+    package_skill_ids = {
+        path.parent.name
+        for path in (ROOT / "skills").glob("*/SKILL.md")
+        if path.parent.name != "ru-writing-style"
+    }
+    package_skill_ids.add("sync-base")
+
+    assert ".claude/skills" not in exact
+    assert {
+        path.removeprefix(".claude/skills/")
+        for path in exact
+        if path.startswith(".claude/skills/")
+    } == package_skill_ids
+    assert ".claude/skills/ru-writing-style" not in exact
+    assert exact == sorted(exact)
+
+
 def test_officecli_is_catalogued_only_as_a_cold_foundation_reference():
     cold_path = ROOT / "cold" / "memory" / "reference_officecli.md"
     text = cold_path.read_text(encoding="utf-8")
