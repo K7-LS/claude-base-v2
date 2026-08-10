@@ -14,7 +14,7 @@
     "hot_source": "CLAUDE.md",
     "hot_destination": ".claude/CLAUDE.md",
     "config_source": "runtime/settings.json",
-    "config_destination": ".claude/settings.json"
+    "config_destination": ".claude/base/runtime/settings.template.json"
   },
   "environment": {
     "scope": "current-user",

@@ -4,8 +4,7 @@
   "replace_files": [
     ".claude/CLAUDE.md",
     ".claude/base/VERSION",
-    ".claude/base/components.lock.json",
-    ".claude/settings.json"
+    ".claude/base/components.lock.json"
   ],
   "exact_directories": [
     ".claude/agents",
