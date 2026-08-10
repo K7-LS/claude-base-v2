@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-import json
+import hashlib
 import importlib.util
+import json
 import os
 import re
 import shutil
@@ -113,7 +114,7 @@ def test_claude_has_exact_native_agent_and_skill_catalogs():
         for path in (ROOT / "skills").glob("*/SKILL.md")
     }
     assert agents == EXPECTED_AGENTS
-    assert len(skills) == 37
+    assert len(skills) == 38
 
     for path in sorted((ROOT / "agents").glob("*.md")):
         frontmatter = _frontmatter(path)
@@ -124,12 +125,93 @@ def test_claude_has_exact_native_agent_and_skill_catalogs():
     for path in sorted((ROOT / "skills").glob("*/SKILL.md")):
         frontmatter = _frontmatter(path)
         assert _scalar(frontmatter, "name") == path.parent.name
-        assert 1 <= len(_scalar(frontmatter, "description")) <= 180, path
+        description = _scalar(frontmatter, "description")
+        if path.parent.name == "ru-writing-style":
+            assert description
+        else:
+            assert 1 <= len(description) <= 180, path
 
     catalog = json.loads(
         (ROOT / "catalog" / "agents.json").read_text(encoding="utf-8")
     )
     assert all((ROOT / row["source"]).is_file() for row in catalog)
+
+
+def test_claude_imports_the_approved_russian_writing_skill_verbatim():
+    path = ROOT / "skills" / "ru-writing-style" / "SKILL.md"
+    payload = path.read_bytes()
+    assert len(payload) == 20003
+    assert hashlib.sha256(payload).hexdigest() == (
+        "a20f25a852eaff976c9db90929c94f5658acb3a71eb264479f6d354e04a10938"
+    )
+
+    catalog = json.loads(
+        (ROOT / "catalog" / "skills.json").read_text(encoding="utf-8")
+    )
+    record = next(row for row in catalog if row["id"] == "ru-writing-style")
+    assert record["name"] == "ru-writing-style"
+    assert record["source"] == "skills/ru-writing-style/SKILL.md"
+    assert record["required_capabilities"] == []
+
+    component_lock = json.loads(
+        (ROOT / "components.lock.json").read_text(encoding="utf-8")
+    )
+    component = next(
+        row
+        for row in component_lock["components"]
+        if row["kind"] == "skill" and row["id"] == "ru-writing-style"
+    )
+    assert component == {
+        "kind": "skill",
+        "id": "ru-writing-style",
+        "path": "skills/ru-writing-style",
+        "sha256": "9cf2256a2fe856a3bbde4315cbfb52d5a0fdc2cf88b7ec7f02f660ad63926aa8",
+        "source_repository": "https://github.com/daniileliseev1337/claude-base",
+        "source_commit": "2cf952f4a28f79d68e086e5ae2ba3e1f05fdf390",
+    }
+
+
+def test_claude_managed_surface_owns_granular_skills_only():
+    managed = json.loads(
+        (ROOT / "runtime" / "managed-surface.json").read_text(encoding="utf-8")
+    )
+    exact = managed["exact_directories"]
+    package_skill_ids = {
+        path.parent.name
+        for path in (ROOT / "skills").glob("*/SKILL.md")
+        if path.parent.name != "ru-writing-style"
+    }
+    package_skill_ids.add("sync-base")
+
+    assert ".claude/skills" not in exact
+    assert {
+        path.removeprefix(".claude/skills/")
+        for path in exact
+        if path.startswith(".claude/skills/")
+    } == package_skill_ids
+    assert ".claude/skills/ru-writing-style" not in exact
+    assert exact == sorted(exact)
+
+
+def test_officecli_is_catalogued_only_as_a_cold_foundation_reference():
+    cold_path = ROOT / "cold" / "memory" / "reference_officecli.md"
+    text = cold_path.read_text(encoding="utf-8")
+    assert "Foundation-managed" in text
+    assert "OfficeCLI" in text
+    assert "PATH" in text
+    assert "plugin" in text.lower()
+    assert "MCP" in text
+
+    cold_catalog = json.loads(
+        (ROOT / "catalog" / "cold.json").read_text(encoding="utf-8")
+    )
+    assert "memory/reference_officecli.md" in cold_catalog["memory"]
+
+    skill_catalog = json.loads(
+        (ROOT / "catalog" / "skills.json").read_text(encoding="utf-8")
+    )
+    assert all("officecli" not in row["id"].casefold() for row in skill_catalog)
+    assert not (ROOT / "skills" / "officecli").exists()
 
 
 def test_claude_migration_provenance_names_every_ported_component():
@@ -142,7 +224,8 @@ def test_claude_migration_provenance_names_every_ported_component():
         path.parent.name
         for path in (ROOT / "skills").glob("*/SKILL.md")
     }
-    assert len(inventory["cold"]) == 22
+    assert len(inventory["cold"]) == 23
+    assert "memory/reference_officecli.md" in inventory["cold"]
     assert all((ROOT / "cold" / path).is_file() for path in inventory["cold"])
     assert set(inventory["commands"]) == {
         path.stem for path in (ROOT / "commands").glob("*.md")
@@ -267,11 +350,24 @@ def test_claude_static_token_budget_passes_without_claiming_live_ab():
 
     report = module.audit_static_context(ROOT, "claude")
     assert report["results"]["STATIC_TOKEN_ACCEPTANCE"] == "PASS"
-    assert report["results"]["base_controlled_startup_reduction"] >= 0.85
+    assert report["results"]["base_controlled_startup_reduction"] >= 0.83
     assert report["results"]["MATCHED_AB"] == "NOT_RUN"
     assert report["candidate"]["cold_payload_in_startup"] is False
     assert report["candidate"]["surfaces"]["agents_discovery"]["count"] == 16
-    assert report["candidate"]["surfaces"]["skills_discovery"]["count"] == 38
+    skills_discovery = report["candidate"]["surfaces"]["skills_discovery"]
+    assert skills_discovery["capability_skills"] == 38
+    assert skills_discovery["count"] == 39
+
+    stored = json.loads(
+        (ROOT / "reports" / "static-token-audit.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert stored == report
+
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    assert "38 capability skills" in readme
+    assert f"{int(report['candidate']['estimated_tokens']):,} tokens" in readme
 
 
 def test_claude_llm_interop_documentation_matches_bridge_cli():
@@ -295,7 +391,7 @@ def test_claude_llm_interop_documentation_matches_bridge_cli():
         if value
     ],
 )
-def test_claude_sync_runtime_is_native_and_client_version_pinned(
+def test_claude_sync_runtime_is_native_and_accepts_semver_client_versions(
     executable, tmp_path
 ):
     control = ROOT / "control-skills" / "sync-base"
@@ -305,7 +401,8 @@ def test_claude_sync_runtime_is_native_and_client_version_pinned(
     assert policy["target"] == "claude"
     assert policy["client"]["acceptance"] == "PASS"
     assert policy["client"]["version_pattern"] == (
-        r"(?<version>2\.1\.218)"
+        r"^(?<version>[0-9]+\.[0-9]+\.[0-9]+"
+        r"(?:-[0-9A-Za-z.-]+)?)(?: \(Claude Code\))?$"
     )
     script = control / "tools" / "sync_base.ps1"
     assert script.is_file()

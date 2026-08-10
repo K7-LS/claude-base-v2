@@ -332,6 +332,14 @@
     },
     {
       "kind": "skill",
+      "id": "ru-writing-style",
+      "path": "skills/ru-writing-style",
+      "sha256": "9cf2256a2fe856a3bbde4315cbfb52d5a0fdc2cf88b7ec7f02f660ad63926aa8",
+      "source_repository": "https://github.com/daniileliseev1337/claude-base",
+      "source_commit": "2cf952f4a28f79d68e086e5ae2ba3e1f05fdf390"
+    },
+    {
+      "kind": "skill",
       "id": "skill-development",
       "path": "skills/skill-development",
       "sha256": "f0592ed7be01f0dc166ec3e8abc21e376c7a008030653c2f5efdd8e296febc62",
