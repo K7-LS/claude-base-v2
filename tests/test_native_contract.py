@@ -391,7 +391,7 @@ def test_claude_llm_interop_documentation_matches_bridge_cli():
         if value
     ],
 )
-def test_claude_sync_runtime_is_native_and_client_version_pinned(
+def test_claude_sync_runtime_is_native_and_accepts_semver_client_versions(
     executable, tmp_path
 ):
     control = ROOT / "control-skills" / "sync-base"
@@ -401,7 +401,8 @@ def test_claude_sync_runtime_is_native_and_client_version_pinned(
     assert policy["target"] == "claude"
     assert policy["client"]["acceptance"] == "PASS"
     assert policy["client"]["version_pattern"] == (
-        r"(?<version>2\.1\.218)"
+        r"^(?<version>[0-9]+\.[0-9]+\.[0-9]+"
+        r"(?:-[0-9A-Za-z.-]+)?)(?: \(Claude Code\))?$"
     )
     script = control / "tools" / "sync_base.ps1"
     assert script.is_file()
