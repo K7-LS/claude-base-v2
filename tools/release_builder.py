@@ -723,6 +723,12 @@ def build_release_from_source(
             "credentials_included": False,
         },
         "environment": contract["environment"],
+        "retired_managed_paths": [
+            ".claude/skills/doc-extract",
+            ".claude/skills/excel-helper",
+            ".claude/skills/revit-family-generator-ru",
+            ".claude/skills/word-helper",
+        ],
         "session_tools_baseline": baseline,
         "files": files,
     }
