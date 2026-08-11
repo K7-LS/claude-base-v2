@@ -16,10 +16,8 @@
     ".claude/skills/cad-reader",
     ".claude/skills/chains-pattern",
     ".claude/skills/co-verify",
-    ".claude/skills/doc-extract",
     ".claude/skills/doc-finder",
     ".claude/skills/domain-grilling",
-    ".claude/skills/excel-helper",
     ".claude/skills/facts-layer",
     ".claude/skills/graphify",
     ".claude/skills/handoff-to-new-chat",
@@ -34,7 +32,6 @@
     ".claude/skills/pnr-vor-helper",
     ".claude/skills/project-memory",
     ".claude/skills/revit-family-generator",
-    ".claude/skills/revit-family-generator-ru",
     ".claude/skills/revit-testbed",
     ".claude/skills/ru-gov-access",
     ".claude/skills/skill-development",
@@ -48,7 +45,6 @@
     ".claude/skills/understanding-map",
     ".claude/skills/upd-parser",
     ".claude/skills/web-access",
-    ".claude/skills/word-helper",
     ".claude/skills/yandex-disk-uploader"
   ],
   "preserved_paths": [
