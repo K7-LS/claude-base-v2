@@ -1,6 +1,6 @@
-# project-memory — память проекта (для человека)
+# project-memory — единое ядро проекта (для человека)
 
-Кодификация переносимой схемы «папка Claude/ в объекте»: bootstrap одной
+Кодификация переносимой схемы единого ядра: bootstrap одной
 командой + rot-курирование статуса + progressive SessionStart-контекст.
 Мультидевайс — Я.Диск: относительные пути, свежесть по mtime, без git;
 откат — из `_backup_<дата>/`.
@@ -11,10 +11,11 @@
 python "$HOME\.claude\skills\project-memory\tools\bootstrap.py" "Мой объект" --target "<корень проекта>"
 ```
 
-Получите:
+Если ядра нет, получите:
 
 ```
 <проект>/CLAUDE.md            # указатель-страховка
+<проект>/AGENTS.md             # указатель для Codex и других клиентов
 <проект>/Claude/CLAUDE.md     # правила переносимой памяти
 <проект>/Claude/README.md     # навигатор
 <проект>/Claude/ЖУРНАЛ СЕССИЙ.md
@@ -25,13 +26,17 @@ python "$HOME\.claude\skills\project-memory\tools\bootstrap.py" "Мой объе
 файла — `--force STATUS.md` (для CLAUDE.md указывать путь: `./CLAUDE.md`
 или `Claude/CLAUDE.md`).
 
+Если до запуска уже существует валидное `Codex/`, оно становится общим ядром:
+`Claude/` рядом не создаётся. Аналогично Codex переиспользует существующее
+`Claude/`. Два несогласованных ядра дают `CORE_CONFLICT` до любых записей.
+
 ## Курирование протухшего статуса
 
 ```powershell
 python "$HOME\.claude\skills\project-memory\tools\curate_rot.py" propose --project "<корень>"
-# → Claude/.curate/<stamp>/REPORT.md — читать глазами
+# → <ядро>/.curate/<stamp>/REPORT.md — читать глазами
 python "$HOME\.claude\skills\project-memory\tools\curate_rot.py" apply <stamp> --accept p1,p3 --project "<корень>"
-# бэкап в Claude/_backup_<дата>/ делается сам; откат — скопировать назад
+# бэкап в <ядро>/_backup_<дата>/ делается сам; откат — скопировать назад
 ```
 
 Скрипт только ПРЕДЛАГАЕТ (все правки — после вашего/Claude review);

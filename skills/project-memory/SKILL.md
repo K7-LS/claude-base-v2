@@ -11,12 +11,26 @@ session-reports также остаются на устройстве.
 
 ## 1. Bootstrap (разворот ядра)
 
+Перед bootstrap найди существующее валидное ядро в `Claude/` или `Codex/`.
+Ядро валидно, если в нём есть файл правил (`CLAUDE.md` либо `AGENTS.md`),
+`STATUS.md` и `ЖУРНАЛ СЕССИЙ.md`.
+
+- Найдено одно — работать только в нём, независимо от того, какая модель его
+  создала; вторую папку не создавать.
+- Не найдено ни одного — развернуть `Claude/`.
+- Найдены оба — использовать единственный канон, на который согласованно
+  указывают корневые `AGENTS.md` и `CLAUDE.md`. При расхождении остановиться с
+  `CORE_CONFLICT`; ничего не объединять, не удалять и не перезаписывать.
+
 ```
 python "$HOME/.claude/skills/project-memory/tools/bootstrap.py" "Имя проекта" --target "<корень проекта>"
 ```
 
-- Создаёт `Claude/{CLAUDE.md, README.md, ЖУРНАЛ СЕССИЙ.md, STATUS.md}` +
-  корневой `CLAUDE.md`-указатель. Идемпотентно: существующее НЕ трогает
+- Если ядра ещё нет, создаёт
+  `Claude/{CLAUDE.md, README.md, ЖУРНАЛ СЕССИЙ.md, STATUS.md}` и два корневых
+  указателя — `CLAUDE.md` и `AGENTS.md`. Если уже есть валидное `Codex/`,
+  переиспользует его и создаёт только недостающий указатель для Claude.
+  Идемпотентно: существующее НЕ трогает
   (`=` в отчёте); перезапись — только явный `--force <файл>`
   (для CLAUDE.md путь обязателен: `./CLAUDE.md` корневой,
   `Claude/CLAUDE.md` внутренний).
@@ -37,7 +51,7 @@ python "$HOME/.claude/skills/project-memory/tools/bootstrap.py" "Имя прое
 python "$HOME/.claude/skills/project-memory/tools/curate_rot.py" propose --project "<корень>"
 ```
 
-1. **propose** (read-only) → `Claude/.curate/<stamp>/{proposals.json, REPORT.md}`.
+1. **propose** (read-only) → `<ядро>/.curate/<stamp>/{proposals.json, REPORT.md}`.
    Скрипт даёт детерминированные сигналы (файл-призрак, прошедшая дата,
    STATUS отстал от журнала, абсолютный путь, «готово» с менявшимся
    файлом) — все `flag`.
@@ -54,7 +68,7 @@ python "$HOME/.claude/skills/project-memory/tools/curate_rot.py" propose --proje
 python ".../curate_rot.py" apply <stamp> --accept p1,c2 --project "<корень>"
 ```
 
-   Скрипт сам сделает бэкап `Claude/_backup_<дата>/` до записи. Откат =
+   Скрипт сам сделает бэкап `<ядро>/_backup_<дата>/` до записи. Откат =
    копирование из бэкапа назад.
 
 ## 3. Progressive session context
@@ -100,6 +114,7 @@ UserPromptSubmit += `tools/hooks/project_context.ps1`; PreToolUse += `tools/hook
 ## Правила (жёсткие)
 
 - Пути в файлах памяти — ТОЛЬКО относительные от корня проекта.
+- Ядро проекта одно: Claude и Codex читают и обновляют один STATUS и один журнал.
 - При материальном изменении состояния запись журнала идёт сверху, 5–10 строк,
   формат `## ГГГГ-ММ-ДД · УСТРОЙСТВО · тема`.
 - Никаких правок памяти мимо бэкапа на apply-шаге курирования.

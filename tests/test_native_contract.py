@@ -7,6 +7,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -32,6 +33,27 @@ EXPECTED_AGENTS = {
     "snabzhenets",
     "word-checker",
 }
+
+
+def test_project_memory_reuses_existing_codex_core(tmp_path):
+    core = tmp_path / "Codex"
+    core.mkdir()
+    for name in ("AGENTS.md", "STATUS.md", "ЖУРНАЛ СЕССИЙ.md"):
+        (core / name).write_text(f"# {name}\n", encoding="utf-8")
+
+    script = ROOT / "skills" / "project-memory" / "tools" / "bootstrap.py"
+    result = subprocess.run(
+        [sys.executable, str(script), "Общее ядро", "--target", str(tmp_path)],
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "Codex/ (переиспользовано)" in result.stdout
+    assert not (tmp_path / "Claude").exists()
+    assert "`Codex/`" in (tmp_path / "CLAUDE.md").read_text(encoding="utf-8")
 
 
 def _frontmatter(path: Path) -> str:
