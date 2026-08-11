@@ -18,7 +18,11 @@ $OutputEncoding = $Utf8NoBom
 $Target = 'claude'
 $Repository = 'daniileliseev1337/claude-base-v2'
 $RepositoryUrl = "https://github.com/$Repository"
-$AllowedExtensions = @('.json', '.md', '.toml', '.txt', '.yaml', '.yml')
+$AllowedExtensions = @(
+    '.docx', '.js', '.json', '.lsp', '.md', '.patch', '.ps1', '.py',
+    '.tmpl', '.toml', '.txt', '.xlsx', '.yaml', '.yml'
+)
+$AllowedSpecialNames = @('.gitkeep', '.graphify_version')
 $StateRoot = Join-Path $env:USERPROFILE '.llm-foundation\state\session-tools\claude'
 $StatePath = Join-Path $StateRoot 'state.json'
 $JournalPath = Join-Path $StateRoot 'active-transaction.json'
@@ -400,7 +404,9 @@ function Assert-FileRecord {
     param($Record)
     Assert-ExactProperties $Record @('path', 'sha256', 'bytes') 'file record'
     Assert-SafeRelativePath ([string]$Record.path)
-    if ($AllowedExtensions -notcontains [IO.Path]::GetExtension([string]$Record.path).ToLowerInvariant()) { throw 'executable content' }
+    $Leaf = [IO.Path]::GetFileName([string]$Record.path)
+    if ($AllowedExtensions -notcontains [IO.Path]::GetExtension([string]$Record.path).ToLowerInvariant() -and
+        $AllowedSpecialNames -notcontains $Leaf) { throw 'non-portable content' }
     if (-not (Test-Sha256 $Record.sha256) -or -not (Test-Integer $Record.bytes) -or $Record.bytes -lt 0 -or $Record.bytes -gt 1048576) {
         throw 'invalid file record'
     }
@@ -415,7 +421,7 @@ function Read-SessionArchive {
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $Archive = [IO.Compression.ZipFile]::OpenRead($Path)
     try {
-        if ($Archive.Entries.Count -gt 257) { throw 'archive entry limit exceeded' }
+        if ($Archive.Entries.Count -gt 513) { throw 'archive entry limit exceeded' }
         $Names = New-Object 'Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
         $Folded = New-Object 'Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
         $Entries = @{}
@@ -443,26 +449,36 @@ function Read-SessionArchive {
             $Manifest.target -cne 'claude' -or $Manifest.release_tag -cne $script:SelectedTag -or
             $Manifest.base_version -cne $script:SelectedVersion) { throw 'session manifest identity differs' }
         $Tools = @($Manifest.tools)
-        if ($Tools.Count -ne 1 -or $AssetRecord.tool_count -ne 1) { throw 'BLOCKED_MULTI_TOOL_ASSET' }
-        $Tool = $Tools[0]
-        Assert-ExactProperties $Tool @('id', 'files') 'tool record'
-        if ($Tool.id -cnotmatch '^[A-Za-z0-9][A-Za-z0-9-]{0,63}$') { throw 'invalid tool id' }
-        $Files = @($Tool.files)
-        if ($Files.Count -lt 1 -or $Files.Count -gt 256 -or $Files.Count -ne $AssetRecord.file_count) { throw 'file count differs' }
+        if ($Tools.Count -lt 1 -or $Tools.Count -gt 64 -or
+            $AssetRecord.tool_count -ne $Tools.Count) { throw 'tool count differs' }
         $Expected = New-Object 'Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
         [void]$Expected.Add('session-tools-manifest.json')
-        $Previous = ''
-        foreach ($Record in $Files) {
-            Assert-FileRecord $Record
-            if ($Previous -and [StringComparer]::Ordinal.Compare($Previous, [string]$Record.path) -ge 0) { throw 'file records not sorted' }
-            $Previous = [string]$Record.path
-            $Name = 'tools/{0}/{1}' -f $Tool.id, $Record.path
-            if (-not $Expected.Add($Name) -or -not $Entries.ContainsKey($Name)) { throw 'archive layout differs' }
-            $Payload = [byte[]]$Entries[$Name]
-            if ($Payload.Length -ne [Int64]$Record.bytes -or (Get-Sha256Bytes $Payload) -cne [string]$Record.sha256) { throw 'archive payload differs' }
+        $PreviousTool = ''
+        $TotalFiles = 0
+        foreach ($Tool in $Tools) {
+            Assert-ExactProperties $Tool @('id', 'files') 'tool record'
+            if ($Tool.id -cnotmatch '^[A-Za-z0-9][A-Za-z0-9-]{0,63}$' -or
+                ($PreviousTool -and [StringComparer]::Ordinal.Compare($PreviousTool, [string]$Tool.id) -ge 0)) {
+                throw 'invalid or unsorted tool id'
+            }
+            $PreviousTool = [string]$Tool.id
+            $Files = @($Tool.files)
+            if ($Files.Count -lt 1 -or $Files.Count -gt 512) { throw 'file count differs' }
+            $Previous = ''
+            foreach ($Record in $Files) {
+                Assert-FileRecord $Record
+                if ($Previous -and [StringComparer]::Ordinal.Compare($Previous, [string]$Record.path) -ge 0) { throw 'file records not sorted' }
+                $Previous = [string]$Record.path
+                $Name = 'tools/{0}/{1}' -f $Tool.id, $Record.path
+                if (-not $Expected.Add($Name) -or -not $Entries.ContainsKey($Name)) { throw 'archive layout differs' }
+                $Payload = [byte[]]$Entries[$Name]
+                if ($Payload.Length -ne [Int64]$Record.bytes -or (Get-Sha256Bytes $Payload) -cne [string]$Record.sha256) { throw 'archive payload differs' }
+                $TotalFiles++
+            }
         }
+        if ($TotalFiles -ne $AssetRecord.file_count -or $TotalFiles -gt 512) { throw 'file count differs' }
         if ($Expected.Count -ne $Entries.Count) { throw 'unexpected archive entry' }
-        return [pscustomobject]@{ Manifest = $Manifest; ManifestBytes = $ManifestBytes; Tool = $Tool; Entries = $Entries }
+        return [pscustomobject]@{ Manifest = $Manifest; ManifestBytes = $ManifestBytes; Tools = $Tools; Entries = $Entries }
     } finally { $Archive.Dispose() }
 }
 
@@ -494,27 +510,34 @@ function Assert-ReleaseManifest {
     }
     foreach ($Name in @('sha256', 'manifest_sha256')) { if (-not (Test-Sha256 $Manifest.session_tools_asset.$Name)) { throw 'session hash differs' } }
     if (-not (Test-Integer $Manifest.session_tools_asset.tool_count) -or
-        $Manifest.session_tools_asset.tool_count -ne 1) { throw 'BLOCKED_MULTI_TOOL_ASSET' }
+        $Manifest.session_tools_asset.tool_count -lt 1 -or
+        $Manifest.session_tools_asset.tool_count -gt 64) { throw 'session tool count differs' }
     foreach ($Name in @('bytes', 'file_count')) {
         if (-not (Test-Integer $Manifest.session_tools_asset.$Name) -or $Manifest.session_tools_asset.$Name -le 0) { throw 'session count differs' }
     }
+    if ($Manifest.session_tools_asset.file_count -gt 512) { throw 'session count differs' }
     if ($Manifest.session_tools_asset.name -cne "session-tools-claude-$script:SelectedVersion.zip") { throw 'session asset name differs' }
 }
 
 function Read-VerifiedState {
     $State = Read-StrictJsonFile $StatePath
-    Assert-ExactProperties $State @(
+    $StateFields = @(
         'schema_version', 'target', 'release_tag', 'release_version',
         'release_manifest_sha256', 'session_manifest_sha256', 'verified_at', 'tools'
-    ) 'state'
-    if (-not (Test-Integer $State.schema_version) -or $State.schema_version -ne 1 -or
+    )
+    if ((Test-Integer $State.schema_version) -and $State.schema_version -eq 2) {
+        $StateFields += 'complete'
+    }
+    Assert-ExactProperties $State $StateFields 'state'
+    if (-not (Test-Integer $State.schema_version) -or $State.schema_version -notin @(1, 2) -or
         $State.target -isnot [string] -or $State.target -cne 'claude' -or
         $State.release_version -isnot [string] -or
         $State.release_version -cnotmatch '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$' -or
         $State.release_tag -cne "claude-v$($State.release_version)" -or
         -not (Test-Sha256 $State.release_manifest_sha256) -or
         -not (Test-Sha256 $State.session_manifest_sha256) -or
-        $State.verified_at -isnot [string]) { throw 'BLOCKED_STATE_DRIFT' }
+        $State.verified_at -isnot [string] -or
+        ($State.schema_version -eq 2 -and $State.complete -isnot [bool])) { throw 'BLOCKED_STATE_DRIFT' }
     try {
         [void][DateTimeOffset]::ParseExact(
             [string]$State.verified_at,
@@ -524,76 +547,77 @@ function Read-VerifiedState {
         )
     } catch { throw 'BLOCKED_STATE_DRIFT' }
     $Tools = @($State.tools)
-    if ($Tools.Count -ne 1) { throw 'BLOCKED_STATE_DRIFT' }
-    $Owned = $Tools[0]
-    Assert-ExactProperties $Owned @('id', 'destination', 'ownership_marker', 'files') 'owned tool'
-    $ExpectedDestination = Join-Path $SkillsRoot ([string]$Owned.id)
-    if ($Owned.id -isnot [string] -or $Owned.id -cnotmatch '^[A-Za-z0-9][A-Za-z0-9-]{0,63}$' -or
-        $Owned.destination -isnot [string] -or -not (Test-PathEqual $Owned.destination $ExpectedDestination) -or
-        $Owned.ownership_marker -cne "session-tools-v1:claude:$($Owned.id)") { throw 'BLOCKED_STATE_DRIFT' }
-    $Files = @($Owned.files)
-    if ($Files.Count -lt 1 -or $Files.Count -gt 256) { throw 'BLOCKED_STATE_DRIFT' }
-    $Previous = ''
-    foreach ($Record in $Files) {
-        Assert-FileRecord $Record
-        if ($Previous -and [StringComparer]::Ordinal.Compare($Previous, [string]$Record.path) -ge 0) {
+    if ($Tools.Count -lt 1 -or $Tools.Count -gt 64) { throw 'BLOCKED_STATE_DRIFT' }
+    $PreviousTool = ''
+    $TotalFiles = 0
+    foreach ($Owned in $Tools) {
+        Assert-ExactProperties $Owned @('id', 'destination', 'ownership_marker', 'files') 'owned tool'
+        $ExpectedDestination = Join-Path $SkillsRoot ([string]$Owned.id)
+        if ($Owned.id -isnot [string] -or $Owned.id -cnotmatch '^[A-Za-z0-9][A-Za-z0-9-]{0,63}$' -or
+            ($PreviousTool -and [StringComparer]::Ordinal.Compare($PreviousTool, [string]$Owned.id) -ge 0) -or
+            $Owned.destination -isnot [string] -or -not (Test-PathEqual $Owned.destination $ExpectedDestination) -or
+            $Owned.ownership_marker -cne "session-tools-v1:claude:$($Owned.id)") { throw 'BLOCKED_STATE_DRIFT' }
+        $Files = @($Owned.files)
+        if ($Files.Count -lt 1 -or $Files.Count -gt 512) { throw 'BLOCKED_STATE_DRIFT' }
+        $Previous = ''
+        foreach ($Record in $Files) {
+            Assert-FileRecord $Record
+            if ($Previous -and [StringComparer]::Ordinal.Compare($Previous, [string]$Record.path) -ge 0) {
+                throw 'BLOCKED_STATE_DRIFT'
+            }
+            $Previous = [string]$Record.path
+            $TotalFiles++
+        }
+        if ((Get-Fingerprint $ExpectedDestination) -cne (Get-ExpectedDirectoryFingerprint $Files)) {
             throw 'BLOCKED_STATE_DRIFT'
         }
-        $Previous = [string]$Record.path
+        $PreviousTool = [string]$Owned.id
     }
-    if ((Get-Fingerprint $ExpectedDestination) -cne (Get-ExpectedDirectoryFingerprint $Files)) {
-        throw 'BLOCKED_STATE_DRIFT'
-    }
+    if ($TotalFiles -gt 512) { throw 'BLOCKED_STATE_DRIFT' }
     return $State
 }
 
 function Assert-StateOwnership {
     param([string]$Destination, $Tool)
-    if (-not (Test-Path -LiteralPath $StatePath -PathType Leaf)) {
-        if (Test-Path -LiteralPath $Destination) {
-            if (-not (Test-Path -LiteralPath $BaselinePath -PathType Leaf) -or
-                (Test-ReparseAtOrAbove $BaselinePath)) { throw 'BLOCKED_UNMANAGED_COLLISION' }
-            try {
-                $Baseline = Read-StrictJsonFile $BaselinePath
-                Assert-ExactProperties $Baseline @('schema_version', 'target', 'release_tag', 'base_version', 'tools') 'baseline'
-                if (-not (Test-Integer $Baseline.schema_version) -or $Baseline.schema_version -ne 1 -or
-                    $Baseline.target -cne 'claude' -or $Baseline.base_version -isnot [string] -or
-                    $Baseline.base_version -cnotmatch '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$' -or
-                    $Baseline.release_tag -cne "claude-v$($Baseline.base_version)") { throw 'baseline identity differs' }
-                if ([version]([string]$Baseline.base_version) -gt
-                    [version]([string]$script:SelectedVersion)) {
-                    throw 'BLOCKED_NO_DOWNGRADE'
-                }
-                $BaselineTools = @($Baseline.tools)
-                if ($BaselineTools.Count -ne 1) { throw 'baseline tool count differs' }
-                $BaselineTool = $BaselineTools[0]
-                Assert-ExactProperties $BaselineTool @('id', 'files') 'baseline tool'
-                if ($BaselineTool.id -cne $Tool.id -or
-                    $BaselineTool.id -cnotmatch '^[A-Za-z0-9][A-Za-z0-9-]{0,63}$') { throw 'baseline tool differs' }
-                $BaselineFiles = @($BaselineTool.files)
-                if ($BaselineFiles.Count -lt 1 -or $BaselineFiles.Count -gt 256) { throw 'baseline files differ' }
-                $Previous = ''
-                foreach ($Record in $BaselineFiles) {
-                    Assert-FileRecord $Record
-                    if ($Previous -and [StringComparer]::Ordinal.Compare($Previous, [string]$Record.path) -ge 0) {
-                        throw 'baseline files not sorted'
-                    }
-                    $Previous = [string]$Record.path
-                }
-                if ((Get-Fingerprint $Destination) -cne (Get-ExpectedDirectoryFingerprint $BaselineFiles)) {
-                    throw 'baseline fingerprint differs'
-                }
-            } catch {
-                if ($_.Exception.Message -eq 'BLOCKED_NO_DOWNGRADE') { throw }
-                throw 'BLOCKED_UNMANAGED_COLLISION'
-            }
+    if (Test-Path -LiteralPath $StatePath -PathType Leaf) {
+        $State = Read-VerifiedState
+        $Owned = @($State.tools | Where-Object { [string]$_.id -ceq [string]$Tool.id })
+        if ($Owned.Count -eq 1 -and (Test-PathEqual $Owned[0].destination $Destination)) {
+            return
         }
+    }
+    if (-not (Test-Path -LiteralPath $Destination)) {
         return
     }
-    $State = Read-VerifiedState
-    $Owned = @($State.tools)[0]
-    if ($Owned.id -cne $Tool.id -or -not (Test-PathEqual $Owned.destination $Destination)) {
-        throw 'BLOCKED_STATE_DRIFT'
+    if (-not (Test-Path -LiteralPath $BaselinePath -PathType Leaf) -or
+        (Test-ReparseAtOrAbove $BaselinePath)) { throw 'BLOCKED_UNMANAGED_COLLISION' }
+    try {
+        $Baseline = Read-StrictJsonFile $BaselinePath
+        Assert-ExactProperties $Baseline @('schema_version', 'target', 'release_tag', 'base_version', 'tools') 'baseline'
+        if (-not (Test-Integer $Baseline.schema_version) -or $Baseline.schema_version -ne 1 -or
+            $Baseline.target -cne 'claude' -or $Baseline.base_version -isnot [string] -or
+            $Baseline.base_version -cnotmatch '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$' -or
+            $Baseline.release_tag -cne "claude-v$($Baseline.base_version)") { throw 'baseline identity differs' }
+        if ([version]([string]$Baseline.base_version) -gt
+            [version]([string]$script:SelectedVersion)) { throw 'BLOCKED_NO_DOWNGRADE' }
+        $BaselineTool = @($Baseline.tools | Where-Object { [string]$_.id -ceq [string]$Tool.id })
+        if ($BaselineTool.Count -ne 1) { throw 'baseline tool differs' }
+        $BaselineFiles = @($BaselineTool[0].files)
+        if ($BaselineFiles.Count -lt 1 -or $BaselineFiles.Count -gt 512) { throw 'baseline files differ' }
+        $Previous = ''
+        foreach ($Record in $BaselineFiles) {
+            Assert-FileRecord $Record
+            if ($Previous -and [StringComparer]::Ordinal.Compare($Previous, [string]$Record.path) -ge 0) {
+                throw 'baseline files not sorted'
+            }
+            $Previous = [string]$Record.path
+        }
+        if ((Get-Fingerprint $Destination) -cne (Get-ExpectedDirectoryFingerprint $BaselineFiles)) {
+            throw 'baseline fingerprint differs'
+        }
+    } catch {
+        if ($_.Exception.Message -eq 'BLOCKED_NO_DOWNGRADE') { throw }
+        throw 'BLOCKED_UNMANAGED_COLLISION'
     }
 }
 
@@ -822,9 +846,49 @@ function Set-JournalPhase {
     Write-DurableJson $JournalPath $Journal
 }
 
+function New-OwnedToolRecord {
+    param($Tool)
+    $Destination = Join-Path $SkillsRoot ([string]$Tool.id)
+    return [ordered]@{
+        id = [string]$Tool.id
+        destination = [IO.Path]::GetFullPath($Destination)
+        ownership_marker = "session-tools-v1:claude:$($Tool.id)"
+        files = @($Tool.files | ForEach-Object {
+            [ordered]@{
+                path = [string]$_.path
+                sha256 = [string]$_.sha256
+                bytes = [Int64]$_.bytes
+            }
+        })
+    }
+}
+
+function Test-ToolMatches {
+    param($Owned, $Tool)
+    if ($null -eq $Owned -or [string]$Owned.id -cne [string]$Tool.id) {
+        return $false
+    }
+    return (Get-ExpectedDirectoryFingerprint $Owned.files) -ceq
+        (Get-ExpectedDirectoryFingerprint $Tool.files)
+}
+
+function Get-SortedOwnedTools {
+    param($OwnedById)
+    return @(
+        $OwnedById.Keys |
+            Sort-Object -CaseSensitive |
+            ForEach-Object { $OwnedById[$_] }
+    )
+}
+
 function Apply-VerifiedTool {
-    param($ArchiveData, [byte[]]$ReleaseManifestBytes)
-    $Tool = $ArchiveData.Tool
+    param(
+        $ArchiveData,
+        $Tool,
+        [byte[]]$ReleaseManifestBytes,
+        [object[]]$NextTools,
+        [bool]$Complete
+    )
     $Destination = Join-Path $SkillsRoot ([string]$Tool.id)
     if (Test-ReparseAtOrAbove $Destination) { throw 'BLOCKED_UNMANAGED_COLLISION' }
     Assert-StateOwnership $Destination $Tool
@@ -835,19 +899,15 @@ function Apply-VerifiedTool {
     $Previous = Join-Path $TransactionRoot 'previous'
     $ExpectedDirectory = Get-ExpectedDirectoryFingerprint $Tool.files
     $State = [ordered]@{
-        schema_version = 1
+        schema_version = 2
         target = 'claude'
         release_tag = $script:SelectedTag
         release_version = $script:SelectedVersion
         release_manifest_sha256 = Get-Sha256Bytes $ReleaseManifestBytes
         session_manifest_sha256 = Get-Sha256Bytes ([byte[]]$ArchiveData.ManifestBytes)
         verified_at = [DateTimeOffset]::UtcNow.ToString('o')
-        tools = @([ordered]@{
-            id = [string]$Tool.id
-            destination = [IO.Path]::GetFullPath($Destination)
-            ownership_marker = "session-tools-v1:claude:$($Tool.id)"
-            files = @($Tool.files | ForEach-Object { [ordered]@{ path = [string]$_.path; sha256 = [string]$_.sha256; bytes = [Int64]$_.bytes } })
-        })
+        tools = @($NextTools)
+        complete = $Complete
     }
     $StateBytes = ConvertTo-JsonBytes $State
     $PreviousDestination = Get-Fingerprint $Destination
@@ -947,11 +1007,22 @@ try {
         $Selected = $Stable | Sort-Object { [version](($_.tagName) -replace '^claude-v', '') } -Descending | Select-Object -First 1
         $script:SelectedTag = [string]$Selected.tagName
         $script:SelectedVersion = $script:SelectedTag -replace '^claude-v', ''
+        $CurrentState = $null
         if (Test-Path -LiteralPath $StatePath -PathType Leaf) {
             try {
                 $Current = Read-VerifiedState
-                if ($Current.release_tag -ceq $script:SelectedTag) { Write-Event $script:SelectedTag 'NO_UPDATE' 'same-tag'; exit 0 }
-                if ([version]$script:SelectedVersion -le [version]([string]$Current.release_version)) { Write-Event $script:SelectedTag 'NO_UPDATE' 'non-monotonic'; exit 0 }
+                $CurrentState = $Current
+                if ([version]$script:SelectedVersion -lt [version]([string]$Current.release_version)) {
+                    Write-Event $script:SelectedTag 'NO_UPDATE' 'non-monotonic'
+                    exit 0
+                }
+                $CurrentComplete = $Current.schema_version -eq 1 -or
+                    [bool]$Current.complete
+                if ($Current.release_tag -ceq $script:SelectedTag -and
+                    $CurrentComplete) {
+                    Write-Event $script:SelectedTag 'NO_UPDATE' 'same-tag'
+                    exit 0
+                }
             } catch {
                 Write-Event $script:SelectedTag 'BLOCKED_STATE_DRIFT' 'state-invalid'
                 exit 0
@@ -996,15 +1067,56 @@ try {
         }
         $ReleaseManifestBytes = $ReleaseManifestBytesAfterVerification
         $ArchiveData = Read-SessionArchive $AssetPath $ReleaseManifest.session_tools_asset
-        Apply-VerifiedTool $ArchiveData $ReleaseManifestBytes
+        $OwnedById = @{}
+        if ($null -ne $CurrentState) {
+            foreach ($Owned in @($CurrentState.tools)) {
+                $OwnedById[[string]$Owned.id] = $Owned
+            }
+        }
+        $Pending = @()
+        foreach ($Tool in @($ArchiveData.Tools)) {
+            $Owned = if ($OwnedById.ContainsKey([string]$Tool.id)) {
+                $OwnedById[[string]$Tool.id]
+            } else { $null }
+            if (-not (Test-ToolMatches $Owned $Tool)) { $Pending += $Tool }
+        }
+        if ($Pending.Count -eq 0 -and $null -ne $CurrentState -and
+            $CurrentState.schema_version -eq 2 -and -not [bool]$CurrentState.complete) {
+            $Pending = @($ArchiveData.Tools | Select-Object -Last 1)
+        }
+        for ($Index = 0; $Index -lt $Pending.Count; $Index++) {
+            $Tool = $Pending[$Index]
+            $OwnedById[[string]$Tool.id] = New-OwnedToolRecord $Tool
+            $Complete = $Index -eq ($Pending.Count - 1) -and
+                $OwnedById.Count -eq @($ArchiveData.Tools).Count
+            if ($Complete) {
+                foreach ($ExpectedTool in @($ArchiveData.Tools)) {
+                    if (-not $OwnedById.ContainsKey([string]$ExpectedTool.id) -or
+                        -not (Test-ToolMatches $OwnedById[[string]$ExpectedTool.id] $ExpectedTool)) {
+                        $Complete = $false
+                        break
+                    }
+                }
+            }
+            Apply-VerifiedTool `
+                $ArchiveData `
+                $Tool `
+                $ReleaseManifestBytes `
+                (Get-SortedOwnedTools $OwnedById) `
+                $Complete
+        }
     } catch {
         $Code = [string]$_.Exception.Message
         if ($Code -notlike 'BLOCKED_*' -and $Code -notlike 'SKIPPED_*') { $Code = 'REJECTED_ASSET' }
         Write-Event $script:SelectedTag $Code 'apply-rejected'
         exit 0
     }
-    Write-Event $script:SelectedTag 'APPLIED' 'verified-snapshot'
-    if ($HookFallback) { 'TOOLS_APPLIED_NEXT_SESSION' }
+    if ($Pending.Count -gt 0) {
+        Write-Event $script:SelectedTag 'APPLIED' 'verified-snapshot'
+        if ($HookFallback) { 'TOOLS_APPLIED_NEXT_SESSION' }
+    } else {
+        Write-Event $script:SelectedTag 'NO_UPDATE' 'verified-snapshot'
+    }
     exit 0
 } catch {
     Write-Event '-' 'SKIPPED_INTERNAL_ERROR' 'fail-open'
