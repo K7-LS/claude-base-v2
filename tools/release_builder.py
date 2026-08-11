@@ -647,6 +647,10 @@ def build_release_from_source(
         for tool in session_tools.manifest["tools"]
         if isinstance(tool, dict)
     )
+    session_destinations = {
+        f"{install_root}/skills/{tool_id}".casefold()
+        for tool_id in session_tool_ids
+    }
     component_lock = build_component_lock(
         repo_root,
         version,
@@ -711,7 +715,11 @@ def build_release_from_source(
         },
         "foundation_engine_version": foundation_version,
         "managed_surface": {
-            "exact_directories": managed["exact_directories"],
+            "exact_directories": [
+                path
+                for path in managed["exact_directories"]
+                if str(path).casefold() not in session_destinations
+            ],
             "replace_files": managed["replace_files"],
             "preserved_paths": managed["preserved_paths"],
         },

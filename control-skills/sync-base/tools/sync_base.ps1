@@ -280,12 +280,36 @@ function Assert-LlmReleaseEvidence {
         }
     }
     else {
-        if ([string]$Evidence.asset_sha256 -cne (
-            [string]$Manifest.asset.sha256
-        ) -or
-            [string]$Evidence.release_manifest_sha256 -cne (
-                Get-LlmSha256File -Path $ManifestPath
+        $AcceptanceProperty = $Manifest.PSObject.Properties[
+            'acceptance_evidence_sha256'
+        ]
+        if ($null -ne $AcceptanceProperty) {
+            if ([string]$AcceptanceProperty.Value -cne (
+                Get-LlmSha256File -Path $EvidencePath
+            ) -or $null -eq $Evidence.release_binding) {
+                throw 'Acceptance evidence file binding differs.'
+            }
+            foreach ($field in @(
+                'target', 'version', 'tag', 'asset',
+                'package_manifest_sha256', 'components_lock_sha256',
+                'source', 'foundation_engine_version',
+                'foundation_engine_manifest_sha256'
             )) {
+                $left = $Evidence.release_binding.$field |
+                    ConvertTo-Json -Compress -Depth 30
+                $right = $Manifest.$field |
+                    ConvertTo-Json -Compress -Depth 30
+                if ($left -cne $right) {
+                    throw "Acceptance evidence binding differs: $field"
+                }
+            }
+        }
+        elseif ([string]$Evidence.asset_sha256 -cne (
+                [string]$Manifest.asset.sha256
+            ) -or
+                [string]$Evidence.release_manifest_sha256 -cne (
+                    Get-LlmSha256File -Path $ManifestPath
+                )) {
             throw 'Acceptance evidence file binding differs.'
         }
     }
