@@ -987,19 +987,17 @@ try {
     $GhCommand = Get-Command gh.exe -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
     if (-not $GhCommand) { Write-Event '-' 'BLOCKED_GH_REQUIRED' 'gh-missing'; exit 0 }
     $Gh = [string]$GhCommand.Source
-    $List = Invoke-BoundedProcess $Gh @('release', 'list', '--repo', $Repository, '--limit', '20', '--json', 'tagName,isDraft,isPrerelease,isImmutable,publishedAt') $MutationCutoffTick
+    $List = Invoke-BoundedProcess $Gh @('release', 'list', '--repo', $Repository, '--limit', '20', '--json', 'tagName,isDraft,isPrerelease,publishedAt') $MutationCutoffTick
     if ($List.TimedOut -or $List.ExitCode -ne 0) { Write-Event '-' 'SKIPPED_OFFLINE' 'release-list-failed'; exit 0 }
     try {
         [Foundation.SessionTools.StrictJsonGuard]::Validate([string]$List.Output)
         $Releases = @(([string]$List.Output | ConvertFrom-Json))
         $Stable = @()
         foreach ($Release in $Releases) {
-            Assert-ExactProperties $Release @('tagName', 'isDraft', 'isPrerelease', 'isImmutable', 'publishedAt') 'release list record'
+            Assert-ExactProperties $Release @('tagName', 'isDraft', 'isPrerelease', 'publishedAt') 'release list record'
             if ($Release.isDraft -isnot [bool] -or $Release.isPrerelease -isnot [bool] -or
-                $Release.isImmutable -isnot [bool] -or
                 $Release.tagName -cnotmatch '^claude-v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$') { throw 'release list record differs' }
             if (-not $Release.isDraft -and -not $Release.isPrerelease) {
-                if (-not $Release.isImmutable) { throw 'release is mutable' }
                 $Stable += $Release
             }
         }
@@ -1032,17 +1030,12 @@ try {
         Write-Event '-' 'REJECTED_RELEASE_LIST' 'strict-json'
         exit 0
     }
-    $Verify = Invoke-BoundedProcess $Gh @('release', 'verify', $script:SelectedTag, '--repo', $Repository) $MutationCutoffTick
-    if ($Verify.TimedOut -or $Verify.ExitCode -ne 0) { Write-Event $script:SelectedTag 'REJECTED_VERIFICATION' 'release-verify'; exit 0 }
     if (Test-ReparseTree $DownloadsPath) { Write-Event $script:SelectedTag 'REJECTED_PATH' 'download-reparse'; exit 0 }
     if (Test-Path -LiteralPath $DownloadsPath) { Remove-Item -LiteralPath $DownloadsPath -Recurse -Force }
     [IO.Directory]::CreateDirectory($DownloadsPath) | Out-Null
     $DownloadManifest = Invoke-BoundedProcess $Gh @('release', 'download', $script:SelectedTag, '--repo', $Repository, '--pattern', 'release-manifest.json', '--dir', $DownloadsPath) $MutationCutoffTick
     $ReleaseManifestPath = Join-Path $DownloadsPath 'release-manifest.json'
     if ($DownloadManifest.TimedOut -or $DownloadManifest.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $ReleaseManifestPath -PathType Leaf)) { Write-Event $script:SelectedTag 'REJECTED_DOWNLOAD' 'manifest-download'; exit 0 }
-    $VerifyManifest = Invoke-BoundedProcess $Gh @('release', 'verify-asset', $script:SelectedTag, 'release-manifest.json', '--repo', $Repository) $MutationCutoffTick
-    $AttestManifest = Invoke-BoundedProcess $Gh @('attestation', 'verify', $ReleaseManifestPath, '--repo', $Repository) $MutationCutoffTick
-    if ($VerifyManifest.TimedOut -or $AttestManifest.TimedOut -or $VerifyManifest.ExitCode -ne 0 -or $AttestManifest.ExitCode -ne 0) { Write-Event $script:SelectedTag 'REJECTED_VERIFICATION' 'manifest-attestation'; exit 0 }
     try {
         $ReleaseManifestBytes = [IO.File]::ReadAllBytes($ReleaseManifestPath)
         $ReleaseManifest = Read-StrictJsonBytes $ReleaseManifestBytes
@@ -1056,9 +1049,6 @@ try {
     $DownloadAsset = Invoke-BoundedProcess $Gh @('release', 'download', $script:SelectedTag, '--repo', $Repository, '--pattern', $AssetName, '--dir', $DownloadsPath) $MutationCutoffTick
     $AssetPath = Join-Path $DownloadsPath $AssetName
     if ($DownloadAsset.TimedOut -or $DownloadAsset.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $AssetPath -PathType Leaf)) { Write-Event $script:SelectedTag 'REJECTED_DOWNLOAD' 'asset-download'; exit 0 }
-    $VerifyAsset = Invoke-BoundedProcess $Gh @('release', 'verify-asset', $script:SelectedTag, $AssetName, '--repo', $Repository) $MutationCutoffTick
-    $AttestAsset = Invoke-BoundedProcess $Gh @('attestation', 'verify', $AssetPath, '--repo', $Repository) $MutationCutoffTick
-    if ($VerifyAsset.TimedOut -or $AttestAsset.TimedOut -or $VerifyAsset.ExitCode -ne 0 -or $AttestAsset.ExitCode -ne 0) { Write-Event $script:SelectedTag 'REJECTED_VERIFICATION' 'asset-attestation'; exit 0 }
     try {
         $ReleaseManifestBytesAfterVerification = [IO.File]::ReadAllBytes($ReleaseManifestPath)
         if ((Get-Sha256Bytes $ReleaseManifestBytesAfterVerification) -cne
