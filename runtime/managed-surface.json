@@ -5,6 +5,7 @@
     ".claude/CLAUDE.md",
     ".claude/base/VERSION",
     ".claude/base/components.lock.json"
+    ,".claude/base/desired-state.json"
   ],
   "exact_directories": [
     ".claude/agents",
@@ -18,6 +19,7 @@
     ".claude/skills/co-verify",
     ".claude/skills/doc-extract",
     ".claude/skills/doc-finder",
+    ".claude/skills/document-quality-gate",
     ".claude/skills/domain-grilling",
     ".claude/skills/excel-helper",
     ".claude/skills/facts-layer",

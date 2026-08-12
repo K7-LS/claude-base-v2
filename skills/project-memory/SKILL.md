@@ -3,112 +3,60 @@ name: project-memory
 description: Use when проекту нужна локальная память решений и статуса.
 ---
 
-# project-memory — память проекта в папке объекта
+# project-memory
 
-Слой ПАПКИ ОБЪЕКТА для переносимого состояния. Локальная auto-memory клиента,
-когда доступна, остаётся per-PC и не заменяет cross-device handoff; детальные
-session-reports также остаются на устройстве.
+Use this skill when a project needs durable, inspectable context across LLM
+tasks without adding its full history to every startup prompt.
 
-## 1. Bootstrap (разворот ядра)
+## Bootstrap
 
-```
-python "$HOME/.claude/skills/project-memory/tools/bootstrap.py" "Имя проекта" --target "<корень проекта>"
-```
+Run:
 
-- Создаёт `Claude/{CLAUDE.md, README.md, ЖУРНАЛ СЕССИЙ.md, STATUS.md}` +
-  корневой `CLAUDE.md`-указатель. Идемпотентно: существующее НЕ трогает
-  (`=` в отчёте); перезапись — только явный `--force <файл>`
-  (для CLAUDE.md путь обязателен: `./CLAUDE.md` корневой,
-  `Claude/CLAUDE.md` внутренний).
-- После разворота: предложить пользователю заполнить STATUS.md (контекст,
-  следующий шаг) — самому НЕ выдумывать.
-- `--profile` зарезервирован (v1: только `core`; `templates/profiles/` —
-  точка расширения, первый профиль добавит блок ПТО).
-- `tools/gen_project_agents.py <root>` собирает плоский `AGENTS.md` проекта из
-  CLAUDE.md для Codex/Copilot/Cursor (П9, мульти-LLM). Различает `current`,
-  `missing`, `stale`, `foreign` по содержимому и маркеру собственности: актуальный
-  не перезаписывает, отсутствующий создаёт, устаревший свой обновляет, чужой не
-  трогает. `SessionStart` запускает это автоматически и поддерживает проект только
-  с корневым `CLAUDE.md`; Codex-слой повторяет шаг как fallback для desktop.
-
-## 2. Курирование протухания (propose → review → apply)
-
-```
-python "$HOME/.claude/skills/project-memory/tools/curate_rot.py" propose --project "<корень>"
+```powershell
+python <skill-root>/tools/bootstrap.py `
+  "Project name" --target "<project-root>" --role "<role>" --domain "<domain>"
 ```
 
-1. **propose** (read-only) → `Claude/.curate/<stamp>/{proposals.json, REPORT.md}`.
-   Скрипт даёт детерминированные сигналы (файл-призрак, прошедшая дата,
-   STATUS отстал от журнала, абсолютный путь, «готово» с менявшимся
-   файлом) — все `flag`.
-2. **Семантический слой (ты, Claude):** прочитай `prompts/rot.md`, STATUS и
-   журнал; свои предложения (`modify`/`archive`, `source: "claude"`, id
-   `c1,c2,…`) ДОПИШИ в тот же proposals.json по схеме. Пустой evidence
-   запрещён (apply отклонит).
-3. **Review:** покажи пользователю REPORT + свои пункты; по каждому —
-   AskUserQuestion (high → принять?; medium → показать diff
-   current/proposed; low/flag → только вручную). НИКОГДА не авто-apply.
-4. **Apply** только принятого:
+The command creates, without overwriting existing files:
 
+- `<project-root>/AGENTS.md` and `CLAUDE.md` — native compact entrypoints;
+- `<project-root>/LLM/AGENTS.md` — shared project rules;
+- `<project-root>/LLM/STATUS.md` — current state and next step;
+- `<project-root>/LLM/КОНТЕКСТ.md` — role, acceptance criteria and pitfalls;
+- `<project-root>/LLM/ЖУРНАЛ СЕССИЙ.md` — compact journal;
+- `<project-root>/LLM/README.md` — navigation.
+
+Use `--force <relative-path>` only after showing the exact target to the user.
+The native client reads its root entrypoint and is directed to the same `LLM/`
+state. Do not install a project hook globally.
+
+## Reviewed curation
+
+Run the read-only proposal stage:
+
+```powershell
+python <skill-root>/tools/curate_rot.py `
+  propose --project "<project-root>"
 ```
-python ".../curate_rot.py" apply <stamp> --accept p1,c2 --project "<корень>"
+
+Read `LLM/.curate/<stamp>/REPORT.md`, inspect each proposal, and ask for an
+explicit decision. Apply only accepted IDs:
+
+```powershell
+python <skill-root>/tools/curate_rot.py `
+  apply <stamp> --accept p1,c2 --project "<project-root>"
 ```
 
-   Скрипт сам сделает бэкап `Claude/_backup_<дата>/` до записи. Откат =
-   копирование из бэкапа назад.
+The apply stage creates `LLM/_backup_<date>/` first. Never auto-apply, invent
+missing facts, or write outside the project memory surface.
 
-## 3. Progressive session context
+## Boundaries
 
-Employee runtime не устанавливает project-memory hooks. Опциональный
-**SessionStart** (`tools/hooks/session_start.ps1`) можно подключить только
-управляемым релизом конфигурации: вне проектов памяти он молчит, а внутри
-печатает верх журнала (2 записи) и сохраняет cwd-project cache для v2.
-- **Stop не устанавливается.** `tools/hooks/session_end.ps1` сохранён как
-  silent compatibility no-op для старых settings и сессию не блокирует.
-- STATUS и журнал обновляются, когда работа материально меняет переносимое
-  состояние проекта. Семантическое решение остаётся за моделью и владельцем.
-
-Сам скилл managed settings не патчит. Активация опционального helper требует
-отдельного решения владельца и обычного release review.
-
-## v2 — усиление ядра (доставка + гейт + роль-мостик) [Этап 1: код готов, активация по решению]
-
-Лечит боль «не держит контекст» (cwd непредсказуем). Спека/план:
-`docs/superpowers/specs/2026-07-09-project-memory-v2-core-design.md`,
-`docs/superpowers/plans/2026-07-09-project-memory-v2.md`.
-
-- **`КОНТЕКСТ.md`** (bootstrap кладёт) — обязательное ядро: ТВОЯ РОЛЬ (роль/домен/
-  `Ведущий агент` из 16 — мостик к доменным агентам, предзаполняет роутинг-гейт),
-  КРИТЕРИИ готовности, ГРАБЛИ топ-3, ссылка на FACTS. Заполнять `--role`/`--domain`
-  при bootstrap (домен→агент авто, `domain_to_agent`).
-- **`find_project.ps1 -StartPath <путь>`** — общий walk-up (путь ИЛИ cwd → проект),
-  JSON `{root,journal,kontekst}`. Один дом walk-up-логики.
-- **Доставка (`project_context.ps1`, UserPromptSubmit):** ловит путь в СООБЩЕНИИ →
-  find_project → инжектит КОНТЕКСТ+STATUS в контекст ОДИН раз на сессию (маркер `ctx_`).
-  Закрывает случай «сессия не из папки проекта».
-- **Блокирующий гейт (жёстко, exit 2):** `log-tool-usage.ps1` (PostToolUse) регистрирует
-  `Read(КОНТЕКСТ.md)` → маркер `ctxread_`; `project_gate.ps1` (PreToolUse) блокирует
-  Write/Edit/Task в папке проекта, если КОНТЕКСТ не прочитан. Блокируется РАБОТА, не диалог.
-- **Границы:** вне проектов-памяти все хуки no-op. Маркеры в `.local-state/project-memory/`.
-- **Следующие этапы (не сделаны):** ⑥ живой дашборд `СТАТУС.html`, ⑤ реакция на жалобы,
-  ④ опц. `РЕШЕНИЯ.md`/`ГРАБЛИ.md` — отдельные планы.
-
-**Активация хуков v2 (через `update-config`, в СУЩЕСТВУЮЩИЕ блоки, не дублируя матчеры):**
-UserPromptSubmit += `tools/hooks/project_context.ps1`; PreToolUse += `tools/hooks/project_gate.ps1`
-(log-tool-usage уже в PostToolUse). ⚠ Гейт даёт exit 2 — включать ОСОЗНАННО после auditor-ревью.
-
-## Правила (жёсткие)
-
-- Пути в файлах памяти — ТОЛЬКО относительные от корня проекта.
-- При материальном изменении состояния запись журнала идёт сверху, 5–10 строк,
-  формат `## ГГГГ-ММ-ДД · УСТРОЙСТВО · тема`.
-- Никаких правок памяти мимо бэкапа на apply-шаге курирования.
-- Обезличивание: в шаблоны/базу не тянуть ФИО, шифры, объекты, адреса.
-- Я.Диск-бинарники: проверять гидратацию, «облачный» ≠ битый.
-
-## Композиция
-
-- `facts-layer` — цифры/факты проекта в FACTS.md; STATUS ссылается, не дублирует.
-- `handoff-to-new-chat` — ортогонален (перегруз контекста внутри сессии);
-  журнал — постоянный handoff между сессиями/устройствами.
-- session-reports устройства — детальные отчёты; в журнал — выжимка 5–10 строк.
+- All stored paths are relative to the project root.
+- Personal instructions belong in the project's native root instructions, not
+  a hidden global user layer.
+- The skill performs no network calls, feedback upload, telemetry, or automatic
+  session-report transmission.
+- Keep each journal entry compact: date, device, result, touched files, next
+  step.
+- Use `facts-layer` for factual values and link to it from `STATUS.md`.
