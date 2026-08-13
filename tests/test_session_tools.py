@@ -292,6 +292,8 @@ def test_builder_rejects_source_symlink_and_executable(tmp_path: Path):
         session_tools.build_session_tools_bundle(clone, tmp_path / "dist", "0.1.1")
 
     link.unlink()
+    if os.name == "nt":
+        return
     executable = source / "run.md"
     executable.write_text("not executable\n", encoding="utf-8")
     executable.chmod(executable.stat().st_mode | stat.S_IXUSR)

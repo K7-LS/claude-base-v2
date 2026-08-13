@@ -66,6 +66,11 @@ if ($HookFallback) {
     $HardDeadlineTick = $StartTick + 30L * $StopwatchFrequency
 }
 
+if ($ManagedPreflight -and [Diagnostics.Stopwatch]::GetTimestamp() -ge $HardDeadlineTick) {
+    [Console]::Error.WriteLine('BLOCKED_SESSION_RECOVERY')
+    exit 65
+}
+
 if (-not ('Foundation.SessionTools.StrictJsonGuard' -as [type])) {
     Add-Type -TypeDefinition @'
 using System;
@@ -930,6 +935,19 @@ try {
     $List = Invoke-BoundedProcess $Gh @('release', 'list', '--repo', $Repository, '--limit', '20', '--json', 'tagName,isDraft,isPrerelease,isImmutable,publishedAt') $MutationCutoffTick
     if ($List.TimedOut -or $List.ExitCode -ne 0) { Write-Event '-' 'SKIPPED_OFFLINE' 'release-list-failed'; exit 0 }
     try {
+        $HasIllegalJsonWhitespace = $false
+        foreach ($JsonCharacter in ([string]$List.Output).ToCharArray()) {
+            $JsonCodePoint = [int][char]$JsonCharacter
+            if ($JsonCodePoint -in @(0x000B, 0x000C, 0x0085, 0x00A0, 0x1680, 0x2028, 0x2029, 0x202F, 0x205F, 0x3000) -or
+                ($JsonCodePoint -ge 0x2000 -and $JsonCodePoint -le 0x200A)) {
+                $HasIllegalJsonWhitespace = $true
+                break
+            }
+        }
+        if ($HasIllegalJsonWhitespace) {
+            Write-Event '-' 'REJECTED_RELEASE_LIST' 'non-rfc-json-whitespace'
+            exit 0
+        }
         [Foundation.SessionTools.StrictJsonGuard]::Validate([string]$List.Output)
         $Releases = @(([string]$List.Output | ConvertFrom-Json))
         $Stable = @()
@@ -999,7 +1017,8 @@ try {
         Apply-VerifiedTool $ArchiveData $ReleaseManifestBytes
     } catch {
         $Code = [string]$_.Exception.Message
-        if ($Code -notlike 'BLOCKED_*' -and $Code -notlike 'SKIPPED_*') { $Code = 'REJECTED_ASSET' }
+        if ($Code -ceq 'verified manifest bytes changed') { $Code = 'REJECTED_VERIFICATION' }
+        if ($Code -notlike 'BLOCKED_*' -and $Code -notlike 'SKIPPED_*' -and $Code -notlike 'REJECTED_*') { $Code = 'REJECTED_ASSET' }
         Write-Event $script:SelectedTag $Code 'apply-rejected'
         exit 0
     }
@@ -1007,7 +1026,11 @@ try {
     if ($HookFallback) { 'TOOLS_APPLIED_NEXT_SESSION' }
     exit 0
 } catch {
-    Write-Event '-' 'SKIPPED_INTERNAL_ERROR' 'fail-open'
+    if ($_.Exception.GetType().Name -ceq 'PropertyNotFoundException') {
+        Write-Event '-' 'REJECTED_RELEASE_LIST' 'malformed-release-list'
+    } else {
+        Write-Event '-' 'SKIPPED_INTERNAL_ERROR' 'fail-open'
+    }
     if ($ManagedPreflight -and (Test-Path -LiteralPath $JournalPath -PathType Leaf)) {
         [Console]::Error.WriteLine('BLOCKED_SESSION_RECOVERY')
         exit 65

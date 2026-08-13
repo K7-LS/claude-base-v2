@@ -57,7 +57,7 @@ def _fake_foundation(root: Path) -> Path:
             "engine_version": "0.1.0",
             "protocol_version": 1,
             "network": "offline",
-            "commands": ["doctor", "install", "inventory", "plan", "rollback"],
+            "commands": ["apply", "doctor", "install", "inventory", "plan", "rollback"],
             "supported_powershell": ["5.1", "7"],
             "foundation_ps1_sha256": _sha256(script),
         },
@@ -168,6 +168,7 @@ def test_native_release_is_deterministic_complete_and_one_way(tmp_path: Path):
         assert config in names
         assert f"{root}/base/VERSION" in names
         assert f"{root}/base/components.lock.json" in names
+        assert f"{root}/base/desired-state.json" in names
         assert f"{root}/base/foundation/0.1.0/foundation.ps1" in names
         assert f"{root}/skills/sync-base/SKILL.md" in names
         assert len(
@@ -183,7 +184,7 @@ def test_native_release_is_deterministic_complete_and_one_way(tmp_path: Path):
                 for name in names
                 if name.startswith(f"{root}/skills/") and name.endswith("/SKILL.md")
             ]
-        ) == 38
+        ) == 39
         assert len(
             [
                 name
@@ -203,6 +204,24 @@ def test_native_release_is_deterministic_complete_and_one_way(tmp_path: Path):
             "preserved_paths": managed["preserved_paths"],
         }
         assert package["environment"] == contract["environment"]
+        assert package["desired_state"] == {
+            "schema_version": 1,
+            "unknown_policy": "prompt-every-run",
+            "local_exceptions": True,
+            "strict_doctor": True,
+            "inventory_roots": [
+                ".claude/agents",
+                ".claude/commands",
+                ".claude/skills",
+            ],
+            "platform_owned": [],
+            "toml_reconcile": [],
+        }
+        desired = json.loads(archive.read(f"{root}/base/desired-state.json"))
+        assert desired["client"] == "claude"
+        assert desired["unknown_policy"] == "prompt-every-run"
+        assert "document-quality-gate" in desired["skills"]
+        assert desired["plugins"] == []
         assert package["sync_policy"] == {
             "direction": "hub-to-consumer",
             "consumer_feedback_upload": False,
@@ -213,7 +232,7 @@ def test_native_release_is_deterministic_complete_and_one_way(tmp_path: Path):
 
     lock = json.loads(first.component_lock_path.read_text(encoding="utf-8"))
     assert len(lock["components"]["agents"]) == 16
-    assert len(lock["components"]["skills"]) == 37
+    assert len(lock["components"]["skills"]) == 38
     assert len(lock["components"]["control_skills"]) == 1
     assert len(lock["components"]["commands"]) == 3
     assert len(lock["components"]["cold"]) == 23

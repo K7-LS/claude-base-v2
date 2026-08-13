@@ -1,7 +1,7 @@
 {
   "candidate": {
     "cold_payload_in_startup": false,
-    "estimated_tokens": 3919,
+    "estimated_tokens": 3968,
     "surfaces": {
       "agents_discovery": {
         "bytes": 3177,
@@ -15,15 +15,15 @@
         "sha256": "416d96ad50ad5b1b1a8b2b877fa3de58fac4fcb31344f7f3003a0f8990753cd7"
       },
       "skills_discovery": {
-        "bytes": 6865,
-        "capability_skills": 38,
+        "bytes": 7011,
+        "capability_skills": 39,
         "control_skills": 1,
-        "count": 39,
+        "count": 40,
         "logical_root": "~/.claude/skills",
-        "sha256": "5b853fc16b7a6ade08f5c03b52e8bfe8b6e17cb6dea8e87c647f274f3c1bad68"
+        "sha256": "28b76f24324eba9cf652f9e216e4bf94a641f6243e7fdf49155aaed9ffc8dd54"
       }
     },
-    "total_bytes": 11756
+    "total_bytes": 11902
   },
   "legacy": {
     "captured_at": "2026-07-26",
@@ -60,7 +60,7 @@
   "results": {
     "MATCHED_AB": "NOT_RUN",
     "STATIC_TOKEN_ACCEPTANCE": "PASS",
-    "base_controlled_startup_reduction": 0.8368966521914064
+    "base_controlled_startup_reduction": 0.8348710406925927
   },
   "schema_version": 1,
   "target": "claude",
