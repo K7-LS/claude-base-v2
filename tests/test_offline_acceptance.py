@@ -104,3 +104,10 @@ def test_accepted_client_candidate_report_remains_non_stable():
     assert report["evidence_body_sha256"] == runner.evidence_body_sha256(
         report
     )
+
+
+def test_acceptance_records_explicit_remove_decision_for_unknown_entries():
+    runner = (ROOT / "tools" / "run_offline_acceptance.py").read_text(
+        encoding="utf-8"
+    )
+    assert 'arguments.append("-ConfirmRemoveUnknown")' in runner
