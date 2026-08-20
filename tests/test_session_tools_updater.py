@@ -16,7 +16,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 UPDATER = ROOT / "runtime" / "update-session-tools.ps1"
 HOOK = ROOT / "runtime" / "hooks" / "check-release.ps1"
-REPOSITORY = "daniileliseev1337/claude-base-v2"
+REPOSITORY = "K7-LS/claude-base-v2"
 VERSION = "0.1.1"
 TAG = f"claude-v{VERSION}"
 
