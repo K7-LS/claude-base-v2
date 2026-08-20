@@ -34,7 +34,7 @@ function Get-DailyReleaseMessage {
         -HomePath $env:USERPROFILE `
         -ScriptBlock {
             Invoke-LlmJsonGet `
-                -Uri 'https://api.github.com/repos/daniileliseev1337/claude-base-v2/releases?per_page=20' `
+                -Uri 'https://api.github.com/repos/K7-LS/claude-base-v2/releases?per_page=20' `
                 -UserAgent 'claude-base-v2-version-check/1' `
                 -TimeoutSeconds 5
         }

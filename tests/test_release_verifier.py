@@ -29,7 +29,7 @@ def _fixture(tmp_path: Path) -> tuple[Path, Path, dict[str, object]]:
         "tag": "claude-v0.1.0",
         "channel": "stable",
         "source": {
-            "repository": "https://github.com/daniileliseev1337/claude-base-v2",
+            "repository": "https://github.com/K7-LS/claude-base-v2",
         },
         "asset": {
             "name": asset.name,

@@ -52,7 +52,7 @@ def build_release_verification(
     repository = str(
         manifest.get("source", {}).get("repository", "")
     ).removeprefix("https://github.com/").rstrip("/")
-    if repository != "daniileliseev1337/claude-base-v2":
+    if repository != "K7-LS/claude-base-v2":
         raise ValueError("stable Claude repository differs")
     if (
         release_api.get("tag_name") != manifest.get("tag")
