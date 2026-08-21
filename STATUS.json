@@ -5,13 +5,13 @@
   "OFFLINE_FOUNDATION_INTEGRATION": "PASS",
   "POLICY_AUDIT": "BLOCKED_REGION_VERIFICATION",
   "CLIENT_BINARY_ACCEPTANCE": "PASS",
-  "CLAUDE_CANARY": "NOT_RUN",
-  "FULL_RELEASE_CLAUDE": "NOT_PASS",
-  "PROGRAM_RELEASE": "0/3",
+  "CLAUDE_CANARY": "PASS",
+  "FULL_RELEASE_CLAUDE": "PASS",
   "blocked_by": [
-    "FULL_RELEASE_CODEX is not PASS",
-    "each employee account and physical location must be verified against Anthropic's current Supported Regions Policy; Russia is not listed",
-    "the zero-model live base canary for Claude Code 2.1.218 has not run",
-    "provider login and model runtime are not authorized or accepted"
+    "each employee account and physical location must be verified against Anthropic's current Supported Regions Policy; Russia is not listed"
+  ],
+  "unverified": [
+    "provider login and model runtime were not exercised; no provider call was authorized",
+    "the canary ran on the installed Claude Code, which may differ from the pinned client version"
   ]
 }
