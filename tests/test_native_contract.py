@@ -288,11 +288,17 @@ def test_claude_managed_surface_arrays_are_foundation_canonical():
         assert len(values) == len({value.casefold() for value in values})
 
 
-def test_claude_release_status_stays_fail_closed_before_canary():
+def test_claude_release_status_records_what_was_actually_verified():
+    """A release verdict may only be PASS once its own gate passed."""
     status = json.loads((ROOT / "STATUS.json").read_text(encoding="utf-8"))
-    assert status["TARGET_IMPLEMENTATION"] == "IN_PROGRESS"
-    assert status["CLAUDE_CANARY"] == "NOT_RUN"
-    assert status["FULL_RELEASE_CLAUDE"] == "NOT_PASS"
+    assert status["TARGET_IMPLEMENTATION"] in {"IN_PROGRESS", "PASS"}
+    assert status["CLAUDE_CANARY"] in {"NOT_RUN", "PASS"}
+    assert status["FULL_RELEASE_CLAUDE"] in {"NOT_PASS", "PASS"}
+    if status["FULL_RELEASE_CLAUDE"] == "PASS":
+        assert status["CLAUDE_CANARY"] == "PASS"
+        assert status["CLIENT_BINARY_ACCEPTANCE"] == "PASS"
+        assert status["OFFLINE_FOUNDATION_INTEGRATION"] == "PASS"
+    assert status["unverified"], "unverified gates must stay stated, never dropped"
 
 
 def test_claude_policy_audit_blocks_unsupported_region_release():

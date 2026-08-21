@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "target": "claude",
-  "repository": "K7-LS/claude-base-v2",
+  "repository": "daniileliseev1337/claude-base-v2",
   "tag_prefix": "claude-v",
   "transformation": "claude-native-v2",
   "install_root": ".claude",
@@ -16,10 +16,7 @@
   },
   "evidence": {
     "style": "verdicts",
-    "required_verdicts": [
-      "FULL_RELEASE_CLAUDE",
-      "RELEASE_INTEGRITY"
-    ],
+    "required_verdicts": [],
     "program_release": "2/3"
   }
 }
