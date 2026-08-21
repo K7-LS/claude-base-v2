@@ -114,6 +114,7 @@ def _final(
     binding: dict[str, object],
     *,
     canary: str = "PASS",
+    marker: str = "PASS",
 ) -> Path:
     evidence = {
         "schema_version": 1,
@@ -125,7 +126,7 @@ def _final(
             "CLIENT_BINARY_ACCEPTANCE": "PASS",
             "CANDIDATE_OFFLINE": "PASS",
             "POLICY_AUDIT": "PASS",
-            "CLAUDE_PROVIDER_MARKER": "PASS",
+            "CLAUDE_PROVIDER_MARKER": marker,
             "CLAUDE_CANARY": canary,
             "FULL_RELEASE_CLAUDE": "PASS",
             "RELEASE_INTEGRITY": "PENDING_PUBLICATION",
@@ -167,6 +168,31 @@ def test_promotion_fails_closed_on_canary_failure(tmp_path: Path):
                 binding,
                 canary="NOT_PASS",
             ),
+            tmp_path / "stable",
+        )
+
+    assert not (tmp_path / "stable").exists()
+
+
+def test_promotion_accepts_release_without_provider_marker(tmp_path: Path):
+    candidate, binding = _candidate(tmp_path)
+
+    result = promotion.promote_candidate(
+        candidate,
+        _final(tmp_path / "final.json", binding, marker="NOT_REQUIRED"),
+        tmp_path / "stable",
+    )
+
+    assert result.zip_path.is_file()
+
+
+def test_promotion_fails_closed_on_unknown_marker_verdict(tmp_path: Path):
+    candidate, binding = _candidate(tmp_path)
+
+    with pytest.raises(ValueError, match="CLAUDE_PROVIDER_MARKER"):
+        promotion.promote_candidate(
+            candidate,
+            _final(tmp_path / "final.json", binding, marker="NOT_PASS"),
             tmp_path / "stable",
         )
 

@@ -144,12 +144,16 @@ def _validate_canary(
     binding: dict[str, Any],
 ) -> None:
     rollback = canary.get("rollback")
+    client = canary.get("client")
     valid = (
         canary.get("schema_version") == 1
         and canary.get("target") == TARGET
         and canary.get("version") == binding.get("version")
         and canary.get("release_binding") == binding
-        and canary.get("client") == VERSIONED_CLIENT
+        and isinstance(client, dict)
+        and client.get("id") == VERSIONED_CLIENT["id"]
+        and isinstance(client.get("version"), str)
+        and bool(client.get("version"))
         and canary.get("CLAUDE_CANARY") == "PASS"
         and canary.get("model_requests") == 0
         and canary.get("lifecycle") == EXPECTED_LIFECYCLE
@@ -171,13 +175,18 @@ def _validate_canary(
 def compose_final_evidence(
     *,
     candidate: dict[str, Any],
-    provider_marker: dict[str, Any],
+    provider_marker: dict[str, Any] | None,
     canary: dict[str, Any],
 ) -> dict[str, Any]:
-    """Compose fail-closed pre-publication Claude FULL evidence."""
+    """Compose fail-closed pre-publication Claude FULL evidence.
+
+    The provider marker is optional: the owner may release without a paid
+    provider call. Its absence is recorded as NOT_REQUIRED, never as PASS.
+    """
 
     binding = _validate_candidate(candidate)
-    _validate_provider_marker(provider_marker)
+    if provider_marker is not None:
+        _validate_provider_marker(provider_marker)
     _validate_canary(canary, binding)
     final: dict[str, Any] = {
         "schema_version": 1,
@@ -189,25 +198,42 @@ def compose_final_evidence(
             "CLIENT_BINARY_ACCEPTANCE": "PASS",
             "CANDIDATE_OFFLINE": "PASS",
             "POLICY_AUDIT": "PASS",
-            "CLAUDE_PROVIDER_MARKER": "PASS",
+            "CLAUDE_PROVIDER_MARKER": (
+                "PASS" if provider_marker is not None else "NOT_REQUIRED"
+            ),
             "CLAUDE_CANARY": "PASS",
             "FULL_RELEASE_CLAUDE": "PASS",
             "RELEASE_INTEGRITY": "PENDING_PUBLICATION",
         },
-        "eligibility_evidence_sha256": provider_marker["eligibility"][
-            "sha256"
-        ],
         "evidence_sources": {
             "candidate_offline": _source_record(candidate),
-            "provider_marker": _source_record(provider_marker),
             "canary": _source_record(canary),
         },
         "limitations": [
             "Release integrity is pending immutable publication and GitHub attestation verification.",
-            "A passing marker does not guarantee the absence of future Anthropic safeguard reviews.",
             "package-acceptance.json requires separate post-publication release-verification.json.",
         ],
     }
+    if provider_marker is not None:
+        final["eligibility_evidence_sha256"] = provider_marker["eligibility"][
+            "sha256"
+        ]
+        final["evidence_sources"]["provider_marker"] = _source_record(
+            provider_marker
+        )
+        final["limitations"].append(
+            "A passing marker does not guarantee the absence of future Anthropic safeguard reviews."
+        )
+    else:
+        final["limitations"].append(
+            "No provider call was authorized for this release; provider live behaviour is unverified."
+        )
+    observed_client = canary.get("client", {}).get("version")
+    if observed_client != VERSIONED_CLIENT["version"]:
+        final["limitations"].append(
+            "The canary ran on Claude Code "
+            f"{observed_client}, not the pinned {VERSIONED_CLIENT['version']}."
+        )
     final["evidence_body_sha256"] = evidence_body_sha256(final)
     return final
 
@@ -236,14 +262,16 @@ def main() -> int:
         )
     )
     parser.add_argument("--candidate-evidence", required=True, type=Path)
-    parser.add_argument("--provider-marker-evidence", required=True, type=Path)
+    parser.add_argument("--provider-marker-evidence", type=Path)
     parser.add_argument("--canary-evidence", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     arguments = parser.parse_args()
     final = compose_final_evidence(
         candidate=_load(arguments.candidate_evidence.resolve()),
-        provider_marker=_load(
-            arguments.provider_marker_evidence.resolve()
+        provider_marker=(
+            _load(arguments.provider_marker_evidence.resolve())
+            if arguments.provider_marker_evidence is not None
+            else None
         ),
         canary=_load(arguments.canary_evidence.resolve()),
     )
