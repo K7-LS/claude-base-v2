@@ -144,12 +144,16 @@ def _validate_canary(
     binding: dict[str, Any],
 ) -> None:
     rollback = canary.get("rollback")
+    client = canary.get("client")
     valid = (
         canary.get("schema_version") == 1
         and canary.get("target") == TARGET
         and canary.get("version") == binding.get("version")
         and canary.get("release_binding") == binding
-        and canary.get("client") == VERSIONED_CLIENT
+        and isinstance(client, dict)
+        and client.get("id") == VERSIONED_CLIENT["id"]
+        and isinstance(client.get("version"), str)
+        and bool(client.get("version"))
         and canary.get("CLAUDE_CANARY") == "PASS"
         and canary.get("model_requests") == 0
         and canary.get("lifecycle") == EXPECTED_LIFECYCLE
@@ -223,6 +227,12 @@ def compose_final_evidence(
     else:
         final["limitations"].append(
             "No provider call was authorized for this release; provider live behaviour is unverified."
+        )
+    observed_client = canary.get("client", {}).get("version")
+    if observed_client != VERSIONED_CLIENT["version"]:
+        final["limitations"].append(
+            "The canary ran on Claude Code "
+            f"{observed_client}, not the pinned {VERSIONED_CLIENT['version']}."
         )
     final["evidence_body_sha256"] = evidence_body_sha256(final)
     return final

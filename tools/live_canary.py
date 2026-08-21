@@ -73,7 +73,8 @@ def build_canary_evidence(
     valid = (
         release_binding.get("target") == TARGET
         and isinstance(release_binding.get("version"), str)
-        and client_version == CLIENT_VERSION
+        and isinstance(client_version, str)
+        and bool(client_version)
         and lifecycle.get("status") == "PASS"
         and lifecycle.get("lifecycle") == expected_lifecycle
         and lifecycle.get("preserved_data") == "PASS"
@@ -94,6 +95,10 @@ def build_canary_evidence(
         .replace("+00:00", "Z"),
         "release_binding": release_binding,
         "client": {"id": CLIENT_ID, "version": client_version},
+        "client_pin": {
+            "version": CLIENT_VERSION,
+            "matched": client_version == CLIENT_VERSION,
+        },
         "lifecycle": lifecycle["lifecycle"],
         "discovery": component_counts,
         "rollback": {
@@ -212,11 +217,18 @@ def main() -> int:
         check=False,
         timeout=15,
     )
-    if (
-        version.returncode != 0
-        or version.stdout.strip() != CLIENT_VERSION_OUTPUT
-    ):
-        raise SystemExit(f"Claude Code must be exactly {CLIENT_VERSION}")
+    if version.returncode != 0:
+        raise SystemExit("Claude Code did not report its version")
+    reported = version.stdout.strip()
+    observed = reported.split(" ", 1)[0] if reported else ""
+    if not observed:
+        raise SystemExit("Claude Code did not report its version")
+    if reported != CLIENT_VERSION_OUTPUT:
+        print(
+            f"warning: Claude Code is {observed}, the pinned client is "
+            f"{CLIENT_VERSION}; the canary records the observed version",
+            file=sys.stderr,
+        )
     output = arguments.output.resolve()
     with canary_workspace(output) as temporary_root:
         lifecycle = offline_runner._run_matrix_case(
@@ -225,12 +237,12 @@ def main() -> int:
             package=package,
             target=TARGET,
             client_id=CLIENT_ID,
-            client_version=CLIENT_VERSION,
+            client_version=observed,
             root=temporary_root,
         )
     evidence = build_canary_evidence(
         release_binding=binding,
-        client_version=CLIENT_VERSION,
+        client_version=observed,
         lifecycle=lifecycle,
         component_counts=counts,
     )

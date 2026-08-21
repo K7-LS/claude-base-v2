@@ -162,3 +162,22 @@ def test_final_evidence_records_absent_marker_as_not_required():
     assert finalizer.evidence_body_sha256(final) == (
         final["evidence_body_sha256"]
     )
+
+
+def test_final_evidence_warns_when_canary_client_differs_from_pin():
+    binding = _binding()
+    canary = _evidence("canary", binding)
+    canary["client"] = {"id": "claude-code", "version": "2.1.114"}
+    canary["evidence_body_sha256"] = finalizer.evidence_body_sha256(canary)
+
+    final = finalizer.compose_final_evidence(
+        candidate=_evidence("candidate", binding),
+        provider_marker=None,
+        canary=canary,
+    )
+
+    assert final["verdicts"]["CLAUDE_CANARY"] == "PASS"
+    assert any(
+        "2.1.114" in limitation and "2.1.218" in limitation
+        for limitation in final["limitations"]
+    )
