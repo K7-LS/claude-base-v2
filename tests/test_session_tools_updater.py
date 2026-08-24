@@ -147,8 +147,15 @@ def fake_gh(tmp_path_factory: pytest.TempPathFactory) -> Path:
     return executable
 
 
-def _write_release(fixture_root: Path, *, duplicate_manifest_key: bool = False) -> dict:
+def _write_release(
+    fixture_root: Path,
+    *,
+    duplicate_manifest_key: bool = False,
+    tool_payloads: dict[str, bytes] | None = None,
+) -> dict:
     payload = "---\nname: ru-writing-style\n---\nПиши ясно и точно.\n".encode()
+    if tool_payloads is None:
+        tool_payloads = {"ru-writing-style": payload}
     session_manifest = {
         "schema_version": 1,
         "target": "claude",
@@ -156,22 +163,24 @@ def _write_release(fixture_root: Path, *, duplicate_manifest_key: bool = False) 
         "base_version": VERSION,
         "tools": [
             {
-                "id": "ru-writing-style",
+                "id": tool_id,
                 "files": [
                     {
                         "path": "SKILL.md",
-                        "sha256": hashlib.sha256(payload).hexdigest(),
-                        "bytes": len(payload),
+                        "sha256": hashlib.sha256(tool_payload).hexdigest(),
+                        "bytes": len(tool_payload),
                     }
                 ],
             }
+            for tool_id, tool_payload in sorted(tool_payloads.items())
         ],
     }
     manifest_bytes = _json_bytes(session_manifest)
     asset = fixture_root / f"session-tools-claude-{VERSION}.zip"
     with zipfile.ZipFile(asset, "w", zipfile.ZIP_DEFLATED) as archive:
         archive.writestr("session-tools-manifest.json", manifest_bytes)
-        archive.writestr("tools/ru-writing-style/SKILL.md", payload)
+        for tool_id, tool_payload in sorted(tool_payloads.items()):
+            archive.writestr(f"tools/{tool_id}/SKILL.md", tool_payload)
     main_asset = fixture_root / f"claude-base-{VERSION}.zip"
     main_asset.write_bytes(b"main-package")
     release = {
@@ -201,8 +210,8 @@ def _write_release(fixture_root: Path, *, duplicate_manifest_key: bool = False) 
             "sha256": _sha256(asset),
             "bytes": asset.stat().st_size,
             "manifest_sha256": hashlib.sha256(manifest_bytes).hexdigest(),
-            "tool_count": 1,
-            "file_count": 1,
+            "tool_count": len(tool_payloads),
+            "file_count": len(tool_payloads),
         },
         "requires": {
             "immutable_release": True,
@@ -222,14 +231,24 @@ def _write_release(fixture_root: Path, *, duplicate_manifest_key: bool = False) 
             b'"target": "claude"', b'"target": "claude",\n  "target": "claude"', 1
         )
     release_path.write_bytes(release_bytes)
-    return {"release": release, "payload": payload, "session": session_manifest}
+    return {
+        "release": release,
+        "payload": payload,
+        "session": session_manifest,
+        "tool_payloads": tool_payloads,
+    }
 
 
-def _environment(tmp_path: Path, fake_gh: Path) -> tuple[dict[str, str], Path, dict]:
+def _environment(
+    tmp_path: Path,
+    fake_gh: Path,
+    *,
+    tool_payloads: dict[str, bytes] | None = None,
+) -> tuple[dict[str, str], Path, dict]:
     home = tmp_path / "профиль пользователя"
     fixture_root = tmp_path / "release fixtures"
     fixture_root.mkdir(parents=True)
-    fixture = _write_release(fixture_root)
+    fixture = _write_release(fixture_root, tool_payloads=tool_payloads)
     receipt = home / ".llm-foundation" / "bin" / "claude-managed.receipt.json"
     receipt.parent.mkdir(parents=True)
     receipt.write_bytes(b'{"fixture":"receipt"}\n')
@@ -399,9 +418,11 @@ def test_verified_session_asset_is_applied_with_cyrillic_and_exact_state(
     state = json.loads(state_path.read_text(encoding="utf-8"))
     assert set(state) == {
         "schema_version", "target", "release_tag", "release_version",
-        "release_manifest_sha256", "session_manifest_sha256", "verified_at", "tools",
+        "release_manifest_sha256", "session_manifest_sha256", "verified_at",
+        "tools", "complete",
     }
-    assert state["schema_version"] == 1
+    assert state["schema_version"] == 2
+    assert state["complete"] is True
     assert state["target"] == "claude"
     assert state["release_tag"] == TAG
     assert state["release_version"] == VERSION
@@ -703,12 +724,14 @@ def test_busy_target_lock_is_bounded_and_does_not_contact_network(
     assert "SKIPPED_LOCK_BUSY" in log.read_text(encoding="utf-8")
 
 
-@pytest.mark.parametrize("declared_tool_count", (0, 2))
+@pytest.mark.parametrize("declared_tool_count", (0, 2, 65))
 @pytest.mark.parametrize("host", _powershells(), ids=lambda value: Path(value).stem)
-def test_protocol_one_blocks_zero_or_multi_tool_assets_before_mutation(
+def test_declared_tool_count_must_match_archive_before_mutation(
     host: str, declared_tool_count: int, tmp_path: Path, fake_gh: Path
 ) -> None:
-    """A singular journal cannot truthfully commit zero or multiple destinations."""
+    """The declared tool_count must equal the verified archive contents and
+    stay within 1..64; zero, out-of-range, and mismatching declarations all
+    block before any filesystem mutation."""
     environment, home, _ = _environment(tmp_path, fake_gh)
     manifest_path = Path(environment["FAKE_GH_FIXTURE_ROOT"]) / "release-manifest.json"
     release = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -722,6 +745,67 @@ def test_protocol_one_blocks_zero_or_multi_tool_assets_before_mutation(
     assert not (home / ".llm-foundation" / "state" / "session-tools" / "claude" / "active-transaction.json").exists()
     log = home / ".llm-foundation" / "state" / "session-tools" / "claude" / "events.log"
     assert "BLOCKED_MULTI_TOOL_ASSET" in log.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("host", _powershells(), ids=lambda value: Path(value).stem)
+def test_multi_tool_asset_is_applied_transactionally_with_complete_state(
+    host: str, tmp_path: Path, fake_gh: Path
+) -> None:
+    """A verified asset with several tools installs every destination and
+    finishes with a complete schema-2 state describing all of them."""
+    payloads = {
+        "alpha-notes": "---\nname: alpha-notes\n---\nАльфа.\n".encode(),
+        "beta-notes": "---\nname: beta-notes\n---\nБета.\n".encode(),
+        "ru-writing-style": "---\nname: ru-writing-style\n---\nПиши ясно.\n".encode(),
+    }
+    environment, home, fixture = _environment(
+        tmp_path, fake_gh, tool_payloads=payloads
+    )
+
+    result = _run(host, environment, "-HookFallback")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "TOOLS_APPLIED_NEXT_SESSION" in result.stdout
+    for tool_id, payload in payloads.items():
+        destination = home / ".claude" / "skills" / tool_id / "SKILL.md"
+        assert destination.read_bytes() == payload
+    state_path = home / ".llm-foundation" / "state" / "session-tools" / "claude" / "state.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    assert state["schema_version"] == 2
+    assert state["complete"] is True
+    assert [tool["id"] for tool in state["tools"]] == sorted(payloads)
+    assert not (
+        home / ".llm-foundation" / "state" / "session-tools" / "claude" / "active-transaction.json"
+    ).exists()
+    log = home / ".llm-foundation" / "state" / "session-tools" / "claude" / "events.log"
+    assert "APPLIED" in log.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("host", _powershells(), ids=lambda value: Path(value).stem)
+def test_incomplete_schema_two_state_resumes_on_same_tag(
+    host: str, tmp_path: Path, fake_gh: Path
+) -> None:
+    """A same-tag state marked incomplete must not answer NO_UPDATE; the
+    updater finishes the snapshot and marks the state complete."""
+    payloads = {
+        "alpha-notes": "---\nname: alpha-notes\n---\nАльфа.\n".encode(),
+        "beta-notes": "---\nname: beta-notes\n---\nБета.\n".encode(),
+    }
+    environment, home, _ = _environment(tmp_path, fake_gh, tool_payloads=payloads)
+    first = _run(host, environment, "-HookFallback")
+    assert first.returncode == 0, first.stdout + first.stderr
+    state_path = home / ".llm-foundation" / "state" / "session-tools" / "claude" / "state.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    assert state["complete"] is True
+    state["complete"] = False
+    state_path.write_bytes(_json_bytes(state))
+
+    second = _run(host, environment, "-HookFallback")
+
+    assert second.returncode == 0, second.stdout + second.stderr
+    resumed = json.loads(state_path.read_text(encoding="utf-8"))
+    assert resumed["complete"] is True
+    assert [tool["id"] for tool in resumed["tools"]] == sorted(payloads)
 
 
 @pytest.mark.parametrize("mode", ("missing-gh", "offline"))

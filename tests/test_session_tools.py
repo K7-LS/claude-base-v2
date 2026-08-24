@@ -74,11 +74,21 @@ def test_builder_creates_deterministic_utf8_lf_zip_and_manifest(tmp_path: Path):
     assert first.manifest_bytes.endswith(b"\n")
     assert first.manifest == session_tools.validate_session_tools_archive(first.zip_path)
 
+    tool_ids = [str(tool["id"]) for tool in first.manifest["tools"]]
+    assert tool_ids == sorted(
+        path.name
+        for path in (ROOT / "skills").iterdir()
+        if path.is_dir() and not path.is_symlink()
+    ), "the bundle must discover every portable skill in the repository"
+    assert "ru-writing-style" in tool_ids
+    assert 1 <= len(tool_ids) <= session_tools.MAX_TOOLS
+
     with zipfile.ZipFile(first.zip_path) as archive:
-        assert archive.namelist() == [
-            "session-tools-manifest.json",
-            "tools/ru-writing-style/SKILL.md",
-        ]
+        assert archive.namelist() == ["session-tools-manifest.json"] + sorted(
+            f"tools/{tool['id']}/{record['path']}"
+            for tool in first.manifest["tools"]
+            for record in tool["files"]
+        )
         assert all(
             info.date_time == (1980, 1, 1, 0, 0, 0)
             for info in archive.infolist()
@@ -157,8 +167,9 @@ def test_manifest_parser_rejects_windows_case_collisions(
         "/SKILL.md",
         "C:/SKILL.md",
         "nested\\SKILL.md",
-        "tool.ps1",
         "tool.exe",
+        "tool.dll",
+        "tool.cmd",
     ],
 )
 def test_manifest_parser_rejects_unsafe_or_executable_paths(value: str):
@@ -166,6 +177,32 @@ def test_manifest_parser_rejects_unsafe_or_executable_paths(value: str):
 
     with pytest.raises(ValueError):
         session_tools.validate_session_tools_manifest(_json_bytes(_manifest([tool])))
+
+
+def test_manifest_parser_accepts_portable_helper_files():
+    files = sorted(
+        [
+            _file_record(name, b"x")
+            for name in (
+                "SKILL.md",
+                "tools/.gitkeep",
+                "tools/.graphify_version",
+                "tools/helper.js",
+                "tools/helper.lsp",
+                "tools/helper.ps1",
+                "tools/helper.py",
+                "tools/template.tmpl",
+                "tools/патч.patch",
+            )
+        ],
+        key=lambda record: str(record["path"]),
+    )
+
+    manifest = session_tools.validate_session_tools_manifest(
+        _json_bytes(_manifest([{"id": "style", "files": files}]))
+    )
+
+    assert len(manifest["tools"][0]["files"]) == len(files)
 
 
 def test_archive_rejects_duplicate_members_symlinks_and_tampered_bytes(tmp_path: Path):
@@ -247,13 +284,16 @@ def test_archive_rejects_executable_member_and_manifest_hash_tamper(tmp_path: Pa
 def test_manifest_parser_enforces_design_limits():
     tools = [
         {"id": f"tool-{index:02}", "files": [_file_record("SKILL.md", b"x")]}
-        for index in range(33)
+        for index in range(session_tools.MAX_TOOLS + 1)
     ]
     with pytest.raises(ValueError, match="tool limit"):
         session_tools.validate_session_tools_manifest(_json_bytes(_manifest(tools)))
 
     files = sorted(
-        [_file_record(f"nested/{index}.md", b"x") for index in range(257)],
+        [
+            _file_record(f"nested/{index}.md", b"x")
+            for index in range(session_tools.MAX_FILES + 1)
+        ],
         key=lambda record: str(record["path"]),
     )
     with pytest.raises(ValueError, match="file limit"):

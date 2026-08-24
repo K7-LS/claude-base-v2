@@ -178,11 +178,17 @@ def test_native_release_is_deterministic_complete_and_one_way(tmp_path: Path):
                 if name.startswith(f"{root}/agents/") and name.endswith(".md")
             ]
         ) == 16
+        assert [
+            name
+            for name in names
+            if name.startswith(f"{root}/skills/") and name.endswith("/SKILL.md")
+        ] == [f"{root}/skills/sync-base/SKILL.md"]
         assert len(
             [
                 name
                 for name in names
-                if name.startswith(f"{root}/skills/") and name.endswith("/SKILL.md")
+                if name.startswith("session-tools-baseline/tools/")
+                and name.endswith("/SKILL.md")
             ]
         ) == 39
         assert len(
@@ -198,11 +204,23 @@ def test_native_release_is_deterministic_complete_and_one_way(tmp_path: Path):
         managed = json.loads(
             (source / "runtime" / "managed-surface.json").read_text(encoding="utf-8")
         )
+        session_skill_ids = sorted(
+            path.name
+            for path in (source / "skills").iterdir()
+            if path.is_dir()
+        )
         assert package["managed_surface"] == {
-            "exact_directories": managed["exact_directories"],
+            "exact_directories": [
+                path
+                for path in managed["exact_directories"]
+                if path.removeprefix(".claude/skills/") not in session_skill_ids
+            ],
             "replace_files": managed["replace_files"],
             "preserved_paths": managed["preserved_paths"],
         }
+        assert ".claude/skills/sync-base" in (
+            package["managed_surface"]["exact_directories"]
+        )
         assert package["environment"] == contract["environment"]
         assert package["desired_state"] == {
             "schema_version": 1,
@@ -232,7 +250,7 @@ def test_native_release_is_deterministic_complete_and_one_way(tmp_path: Path):
 
     lock = json.loads(first.component_lock_path.read_text(encoding="utf-8"))
     assert len(lock["components"]["agents"]) == 16
-    assert len(lock["components"]["skills"]) == 38
+    assert len(lock["components"]["skills"]) == 0
     assert len(lock["components"]["control_skills"]) == 1
     assert len(lock["components"]["commands"]) == 3
     assert len(lock["components"]["cold"]) == 23
@@ -265,12 +283,16 @@ def test_release_binds_session_asset_and_keeps_session_skill_out_of_base(
         identity,
     )
     session = built.manifest["session_tools_asset"]
+    skill_ids = sorted(
+        path.name
+        for path in (source / "skills").iterdir()
+        if path.is_dir()
+    )
 
     assert built.session_tools_zip_path == tmp_path / "release" / session["name"]
     assert session["name"] == "session-tools-claude-0.1.1.zip"
     assert session["sha256"] == _sha256(built.session_tools_zip_path)
-    assert session["tool_count"] == 1
-    assert session["file_count"] == 1
+    assert session["tool_count"] == len(skill_ids)
     assert release_builder.release_binding_from_manifest(built.manifest)[
         "session_tools_asset"
     ] == session
@@ -279,19 +301,21 @@ def test_release_binds_session_asset_and_keeps_session_skill_out_of_base(
         names = archive.namelist()
         package = json.loads(archive.read("package-manifest.json"))
         baseline = package["session_tools_baseline"]
-        assert not any(
-            name.startswith(".claude/skills/ru-writing-style/")
-            for name in names
-        )
+        for tool_id in skill_ids:
+            assert not any(
+                name.startswith(f".claude/skills/{tool_id}/")
+                for name in names
+            ), f"session skill {tool_id} must stay out of the base surface"
         assert baseline["manifest_path"] == (
             "session-tools-baseline/session-tools-manifest.json"
         )
         assert baseline["manifest_sha256"] == hashlib.sha256(
             archive.read(baseline["manifest_path"])
         ).hexdigest()
-        assert [tool["id"] for tool in baseline["tools"]] == [
-            "ru-writing-style"
-        ]
+        assert [tool["id"] for tool in baseline["tools"]] == skill_ids
+        assert session["file_count"] == sum(
+            len(tool["files"]) for tool in baseline["tools"]
+        )
         assert "session-tools-baseline/tools/ru-writing-style/SKILL.md" in names
 
 
