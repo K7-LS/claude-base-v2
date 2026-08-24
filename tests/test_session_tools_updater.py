@@ -454,6 +454,49 @@ def test_verified_session_asset_is_applied_with_cyrillic_and_exact_state(
 
 
 @pytest.mark.parametrize("host", _powershells(), ids=lambda value: Path(value).stem)
+def test_release_list_tolerates_foreign_prerelease_and_draft_records(
+    host: str, tmp_path: Path, fake_gh: Path
+) -> None:
+    """A leftover candidate prerelease or a draft in the release list must be
+    skipped, not fail the whole list: strict tag validation applies only to
+    stable records."""
+    environment, home, fixture = _environment(tmp_path, fake_gh)
+    environment["FAKE_GH_RELEASES_JSON"] = json.dumps(
+        [
+            {
+                "tagName": "claude-candidate-v0.1.0-r2",
+                "isDraft": False,
+                "isPrerelease": True,
+                "isImmutable": True,
+                "publishedAt": "2026-07-28T00:00:00Z",
+            },
+            {
+                "tagName": "wip draft",
+                "isDraft": True,
+                "isPrerelease": False,
+                "isImmutable": False,
+                "publishedAt": "2026-08-01T00:00:00Z",
+            },
+            {
+                "tagName": TAG,
+                "isDraft": False,
+                "isPrerelease": False,
+                "isImmutable": True,
+                "publishedAt": "2026-08-10T00:00:00Z",
+            },
+        ]
+    )
+
+    result = _run(host, environment, "-HookFallback")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "TOOLS_APPLIED_NEXT_SESSION" in result.stdout
+    assert "REJECTED_RELEASE_LIST" not in result.stdout + result.stderr
+    destination = home / ".claude" / "skills" / "ru-writing-style" / "SKILL.md"
+    assert destination.read_bytes() == fixture["payload"]
+
+
+@pytest.mark.parametrize("host", _powershells(), ids=lambda value: Path(value).stem)
 def test_mutable_stable_release_is_rejected_before_verification(
     host: str, tmp_path: Path, fake_gh: Path
 ) -> None:
