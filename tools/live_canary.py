@@ -81,7 +81,7 @@ def build_canary_evidence(
         and lifecycle.get("unknown_discovery_quarantine") == "PASS"
         and lifecycle.get("environment_apply_and_restore") == "PASS"
         and component_counts
-        == {"agents": 16, "skills": 38, "control_skills": 1}
+        == {"agents": 16, "skills": 0, "control_skills": 1, "session_tools": 39}
     )
     if not valid:
         raise ValueError("Claude live canary did not satisfy contract")
@@ -149,8 +149,11 @@ def _load_candidate(candidate_dir: Path):
         "agents": len(components.get("agents", [])),
         "skills": len(components.get("skills", [])),
         "control_skills": len(components.get("control_skills", [])),
+        "session_tools": int(
+            (manifest.get("session_tools_asset") or {}).get("tool_count", 0)
+        ),
     }
-    if counts != {"agents": 16, "skills": 38, "control_skills": 1}:
+    if counts != {"agents": 16, "skills": 0, "control_skills": 1, "session_tools": 39}:
         raise ValueError("Claude candidate component closure differs")
     return binding, package, counts
 

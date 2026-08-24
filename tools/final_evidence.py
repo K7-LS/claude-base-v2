@@ -22,8 +22,9 @@ EXPECTED_LIFECYCLE = {
 }
 EXPECTED_DISCOVERY = {
     "agents": 16,
-    "skills": 38,
+    "skills": 0,
     "control_skills": 1,
+    "session_tools": 39,
 }
 
 
