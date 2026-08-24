@@ -1,38 +1,60 @@
-# project-memory for K7 LLM clients
+# project-memory — единое ядро проекта (для человека)
 
-This is the shared project-memory layout. It emits native root entrypoints and
-does not install hidden imports,
-global project hooks, telemetry, or reverse sync.
+Кодификация переносимой схемы единого ядра: bootstrap одной
+командой + rot-курирование статуса. Мультидевайс — Я.Диск: относительные пути, свежесть по mtime, без git;
+откат — из `_backup_<дата>/`.
 
-```text
-<project>/
-├── AGENTS.md
-├── CLAUDE.md
-└── LLM/
-    ├── AGENTS.md
-    ├── README.md
-    ├── STATUS.md
-    ├── КОНТЕКСТ.md
-    └── ЖУРНАЛ СЕССИЙ.md
-```
-
-Bootstrap:
+## Быстрый старт
 
 ```powershell
-python <skill-root>/tools/bootstrap.py `
-  "Project name" --target "<project-root>"
+python "$HOME\.claude\skills\project-memory\tools\bootstrap.py" "Мой объект" --target "<корень проекта>"
 ```
 
-The command is idempotent. Existing files are preserved unless an exact
-relative path is supplied through `--force`.
+Если ядра нет, получите:
 
-Curation is a two-stage, review-required native custom agent plan:
+```
+<проект>/CLAUDE.md            # указатель-страховка
+<проект>/AGENTS.md             # указатель для Codex и других клиентов
+<проект>/Claude/CLAUDE.md     # правила переносимой памяти
+<проект>/Claude/README.md     # навигатор
+<проект>/Claude/ЖУРНАЛ СЕССИЙ.md
+<проект>/Claude/STATUS.md
+```
+
+Повторный запуск ничего не затирает (`=` в отчёте); перезапись одного
+файла — `--force STATUS.md` (для CLAUDE.md указывать путь: `./CLAUDE.md`
+или `Claude/CLAUDE.md`).
+
+Если до запуска уже существует валидное `Codex/`, оно становится общим ядром:
+`Claude/` рядом не создаётся. Аналогично Codex переиспользует существующее
+`Claude/`. Два несогласованных ядра дают `CORE_CONFLICT` до любых записей.
+
+## Курирование протухшего статуса
 
 ```powershell
-python <skill-root>/tools/curate_rot.py `
-  propose --project "<project-root>"
-python <skill-root>/tools/curate_rot.py `
-  apply <stamp> --accept p1 --project "<project-root>"
+python "$HOME\.claude\skills\project-memory\tools\curate_rot.py" propose --project "<корень>"
+# → <ядро>/.curate/<stamp>/REPORT.md — читать глазами
+python "$HOME\.claude\skills\project-memory\tools\curate_rot.py" apply <stamp> --accept p1,p3 --project "<корень>"
+# бэкап в <ядро>/_backup_<дата>/ делается сам; откат — скопировать назад
 ```
 
-No lifecycle hook is enabled by this skill.
+Скрипт только ПРЕДЛАГАЕТ (все правки — после вашего/Claude review);
+пустой evidence отбрасывается; авто-apply нет; вне `Claude/` не пишет.
+
+## Runtime behavior
+
+Session hooks в поставку не входят: их отсутствие закреплено релизным
+контрактом базы, сам скилл settings не патчит. Доставку контекста и
+обновление STATUS/журнала выполняет модель по правилам SKILL.md — по
+материальному изменению переносимого состояния проекта.
+
+## Тесты
+
+Контракт единого ядра закреплён в `tests/test_native_contract.py` базы
+(переиспользование чужого ядра, отсутствие второй папки поверх).
+
+## Точка расширения
+
+`templates/profiles/` — пусто в v1. Профиль (напр. `id-tom`) = свой набор
+шаблонов поверх ядра; первым добавит блок ПТО. `--profile` в bootstrap
+уже зарезервирован.

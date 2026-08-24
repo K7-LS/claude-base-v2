@@ -3,60 +3,98 @@ name: project-memory
 description: Use when проекту нужна локальная память решений и статуса.
 ---
 
-# project-memory
+# project-memory — память проекта в папке объекта
 
-Use this skill when a project needs durable, inspectable context across LLM
-tasks without adding its full history to every startup prompt.
+Слой ПАПКИ ОБЪЕКТА для переносимого состояния. Локальная auto-memory клиента,
+когда доступна, остаётся per-PC и не заменяет cross-device handoff; детальные
+session-reports также остаются на устройстве.
 
-## Bootstrap
+## 1. Bootstrap (разворот ядра)
 
-Run:
+Перед bootstrap найди существующее валидное ядро в `Claude/` или `Codex/`.
+Ядро валидно, если в нём есть `CLAUDE.md` либо `AGENTS.md` (файл его
+правил), `STATUS.md` и `ЖУРНАЛ СЕССИЙ.md`.
 
-```powershell
-python <skill-root>/tools/bootstrap.py `
-  "Project name" --target "<project-root>" --role "<role>" --domain "<domain>"
+- Найдено одно — работать только в нём, независимо от того, какая модель его
+  создала; вторую папку не создавать.
+- Не найдено ни одного — развернуть `Claude/`.
+- Найдены оба — использовать единственный канон, на который согласованно
+  указывают корневые `AGENTS.md` и `CLAUDE.md`. При расхождении остановиться с
+  `CORE_CONFLICT`; ничего не объединять, не удалять и не перезаписывать.
+
+```
+python "$HOME/.claude/skills/project-memory/tools/bootstrap.py" "Имя проекта" --target "<корень проекта>"
 ```
 
-The command creates, without overwriting existing files:
+- Если ядра ещё нет, создаёт
+  `Claude/{CLAUDE.md, README.md, ЖУРНАЛ СЕССИЙ.md, STATUS.md}` и два корневых
+  указателя — `CLAUDE.md` и `AGENTS.md`. Если уже есть валидное `Codex/`,
+  переиспользует его и создаёт только недостающий указатель для Claude.
+  Идемпотентно: существующее НЕ трогает
+  (`=` в отчёте); перезапись — только явный `--force <файл>`
+  (для CLAUDE.md путь обязателен: `./CLAUDE.md` корневой,
+  `Claude/CLAUDE.md` внутренний).
+- После разворота: предложить пользователю заполнить STATUS.md (контекст,
+  следующий шаг) — самому НЕ выдумывать.
+- `--profile` зарезервирован (v1: только `core`; `templates/profiles/` —
+  точка расширения, первый профиль добавит блок ПТО).
+- `tools/gen_project_agents.py <root>` собирает плоский `AGENTS.md` проекта из
+  CLAUDE.md для Codex/Copilot/Cursor (П9, мульти-LLM). Различает `current`,
+  `missing`, `stale`, `foreign` по содержимому и маркеру собственности: актуальный
+  не перезаписывает, отсутствующий создаёт, устаревший свой обновляет, чужой не
+  трогает. Запускай его при передаче проекта в Codex/Copilot/Cursor; поддержан и
+  проект только с корневым `CLAUDE.md`.
 
-- `<project-root>/AGENTS.md` and `CLAUDE.md` — native compact entrypoints;
-- `<project-root>/LLM/AGENTS.md` — shared project rules;
-- `<project-root>/LLM/STATUS.md` — current state and next step;
-- `<project-root>/LLM/КОНТЕКСТ.md` — role, acceptance criteria and pitfalls;
-- `<project-root>/LLM/ЖУРНАЛ СЕССИЙ.md` — compact journal;
-- `<project-root>/LLM/README.md` — navigation.
+## 2. Курирование протухания (propose → review → apply)
 
-Use `--force <relative-path>` only after showing the exact target to the user.
-The native client reads its root entrypoint and is directed to the same `LLM/`
-state. Do not install a project hook globally.
-
-## Reviewed curation
-
-Run the read-only proposal stage:
-
-```powershell
-python <skill-root>/tools/curate_rot.py `
-  propose --project "<project-root>"
+```
+python "$HOME/.claude/skills/project-memory/tools/curate_rot.py" propose --project "<корень>"
 ```
 
-Read `LLM/.curate/<stamp>/REPORT.md`, inspect each proposal, and ask for an
-explicit decision. Apply only accepted IDs:
+1. **propose** (read-only) → `<ядро>/.curate/<stamp>/{proposals.json, REPORT.md}`.
+   Скрипт даёт детерминированные сигналы (файл-призрак, прошедшая дата,
+   STATUS отстал от журнала, абсолютный путь, «готово» с менявшимся
+   файлом) — все `flag`.
+2. **Семантический слой (ты, Claude):** прочитай `prompts/rot.md`, STATUS и
+   журнал; свои предложения (`modify`/`archive`, `source: "claude"`, id
+   `c1,c2,…`) ДОПИШИ в тот же proposals.json по схеме. Пустой evidence
+   запрещён (apply отклонит).
+3. **Review:** покажи пользователю REPORT + свои пункты; по каждому —
+   AskUserQuestion (high → принять?; medium → показать diff
+   current/proposed; low/flag → только вручную). НИКОГДА не авто-apply.
+4. **Apply** только принятого:
 
-```powershell
-python <skill-root>/tools/curate_rot.py `
-  apply <stamp> --accept p1,c2 --project "<project-root>"
+```
+python ".../curate_rot.py" apply <stamp> --accept p1,c2 --project "<корень>"
 ```
 
-The apply stage creates `LLM/_backup_<date>/` first. Never auto-apply, invent
-missing facts, or write outside the project memory surface.
+   Скрипт сам сделает бэкап `<ядро>/_backup_<дата>/` до записи. Откат =
+   копирование из бэкапа назад.
 
-## Boundaries
+## 3. КОНТЕКСТ.md — роль и критерии
 
-- All stored paths are relative to the project root.
-- Personal instructions belong in the project's native root instructions, not
-  a hidden global user layer.
-- The skill performs no network calls, feedback upload, telemetry, or automatic
-  session-report transmission.
-- Keep each journal entry compact: date, device, result, touched files, next
-  step.
-- Use `facts-layer` for factual values and link to it from `STATUS.md`.
+`КОНТЕКСТ.md` (bootstrap кладёт в ядро) держит ТВОЮ РОЛЬ (роль/домен,
+`Ведущий агент` из 16 — мостик к доменным агентам), КРИТЕРИИ готовности,
+ГРАБЛИ топ-3 и ссылку на FACTS. Заполняй `--role`/`--domain` при bootstrap —
+домен подбирает агента автоматически (`domain_to_agent`). Прочитай КОНТЕКСТ
+перед материальной работой в проекте.
+
+Session hooks в поставку не входят: их отсутствие закреплено релизным
+контрактом базы; доставка контекста — задача модели по этому скиллу.
+
+## Правила (жёсткие)
+
+- Пути в файлах памяти — ТОЛЬКО относительные от корня проекта.
+- Ядро проекта одно: Claude и Codex читают и обновляют один STATUS и один журнал.
+- При материальном изменении состояния запись журнала идёт сверху, 5–10 строк,
+  формат `## ГГГГ-ММ-ДД · УСТРОЙСТВО · тема`.
+- Никаких правок памяти мимо бэкапа на apply-шаге курирования.
+- Обезличивание: в шаблоны/базу не тянуть ФИО, шифры, объекты, адреса.
+- Я.Диск-бинарники: проверять гидратацию, «облачный» ≠ битый.
+
+## Композиция
+
+- `facts-layer` — цифры/факты проекта в FACTS.md; STATUS ссылается, не дублирует.
+- `handoff-to-new-chat` — ортогонален (перегруз контекста внутри сессии);
+  журнал — постоянный handoff между сессиями/устройствами.
+- session-reports устройства — детальные отчёты; в журнал — выжимка 5–10 строк.
