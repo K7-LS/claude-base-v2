@@ -41,7 +41,12 @@ def test_live_canary_evidence_binds_candidate_client_and_rollback():
             "unknown_discovery_quarantine": "PASS",
             "environment_apply_and_restore": "PASS",
         },
-        component_counts={"agents": 16, "skills": 38, "control_skills": 1},
+        component_counts={
+            "agents": 16,
+            "skills": 0,
+            "control_skills": 1,
+            "session_tools": 39,
+        },
     )
 
     assert evidence["CLAUDE_CANARY"] == "PASS"
@@ -76,7 +81,8 @@ def test_live_canary_evidence_rejects_failed_preservation():
             },
             component_counts={
                 "agents": 16,
-                "skills": 38,
+                "skills": 0,
+                "session_tools": 39,
                 "control_skills": 1,
             },
         )

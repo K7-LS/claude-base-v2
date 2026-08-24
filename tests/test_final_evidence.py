@@ -91,7 +91,8 @@ def _evidence(kind: str, binding: dict[str, object]) -> dict[str, object]:
             },
             "discovery": {
                 "agents": 16,
-                "skills": 38,
+                "skills": 0,
+                "session_tools": 39,
                 "control_skills": 1,
             },
         }
