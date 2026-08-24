@@ -1027,12 +1027,11 @@ try {
         foreach ($Release in $Releases) {
             Assert-ExactProperties $Release @('tagName', 'isDraft', 'isPrerelease', 'isImmutable', 'publishedAt') 'release list record'
             if ($Release.isDraft -isnot [bool] -or $Release.isPrerelease -isnot [bool] -or
-                $Release.isImmutable -isnot [bool] -or
-                $Release.tagName -cnotmatch '^claude-v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$') { throw 'release list record differs' }
-            if (-not $Release.isDraft -and -not $Release.isPrerelease) {
-                if (-not $Release.isImmutable) { throw 'release is mutable' }
-                $Stable += $Release
-            }
+                $Release.isImmutable -isnot [bool]) { throw 'release list record differs' }
+            if ($Release.isDraft -or $Release.isPrerelease) { continue }
+            if ($Release.tagName -cnotmatch '^claude-v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$') { throw 'release list record differs' }
+            if (-not $Release.isImmutable) { throw 'release is mutable' }
+            $Stable += $Release
         }
         if ($Stable.Count -eq 0) { Write-Event '-' 'NO_STABLE_RELEASE' 'no-stable'; exit 0 }
         $Selected = $Stable | Sort-Object { [version](($_.tagName) -replace '^claude-v', '') } -Descending | Select-Object -First 1
