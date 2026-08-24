@@ -7,6 +7,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -32,6 +33,48 @@ EXPECTED_AGENTS = {
     "snabzhenets",
     "word-checker",
 }
+
+
+def test_project_memory_reuses_existing_codex_core(tmp_path):
+    core = tmp_path / "Codex"
+    core.mkdir()
+    for name in ("AGENTS.md", "STATUS.md", "ЖУРНАЛ СЕССИЙ.md"):
+        (core / name).write_text(f"# {name}\n", encoding="utf-8")
+
+    script = ROOT / "skills" / "project-memory" / "tools" / "bootstrap.py"
+    result = subprocess.run(
+        [sys.executable, str(script), "Общее ядро", "--target", str(tmp_path)],
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "Codex/ (переиспользовано)" in result.stdout
+    assert not (tmp_path / "Claude").exists()
+
+
+def test_project_memory_blocks_on_conflicting_cores(tmp_path):
+    for core_name, rules in (("Codex", "AGENTS.md"), ("Claude", "CLAUDE.md")):
+        core = tmp_path / core_name
+        core.mkdir()
+        for name in (rules, "STATUS.md", "ЖУРНАЛ СЕССИЙ.md"):
+            (core / name).write_text(f"# {name}\n", encoding="utf-8")
+
+    script = ROOT / "skills" / "project-memory" / "tools" / "bootstrap.py"
+    result = subprocess.run(
+        [sys.executable, str(script), "Конфликт", "--target", str(tmp_path)],
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+
+    assert result.returncode != 0
+    assert "CORE_CONFLICT" in result.stdout + result.stderr
 
 
 def _frontmatter(path: Path) -> str:
