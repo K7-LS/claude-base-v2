@@ -160,25 +160,25 @@ def test_claude_imports_the_approved_russian_writing_skill_verbatim():
     assert component["sha256"]
 
 
-def test_claude_managed_surface_owns_granular_skills_only():
+def test_claude_managed_surface_owns_control_skills_only():
     managed = json.loads(
         (ROOT / "runtime" / "managed-surface.json").read_text(encoding="utf-8")
     )
     exact = managed["exact_directories"]
-    package_skill_ids = {
-        path.parent.name
-        for path in (ROOT / "skills").glob("*/SKILL.md")
-        if path.parent.name != "ru-writing-style"
+    session_skill_ids = {
+        path.name for path in (ROOT / "skills").iterdir() if path.is_dir()
     }
-    package_skill_ids.add("sync-base")
 
     assert ".claude/skills" not in exact
     assert {
         path.removeprefix(".claude/skills/")
         for path in exact
         if path.startswith(".claude/skills/")
-    } == package_skill_ids
-    assert ".claude/skills/ru-writing-style" not in exact
+    } == {"sync-base"}, (
+        "every portable skill is session-owned; only control skills stay base-managed"
+    )
+    for skill_id in session_skill_ids:
+        assert f".claude/skills/{skill_id}" not in exact
     assert exact == sorted(exact)
 
 
