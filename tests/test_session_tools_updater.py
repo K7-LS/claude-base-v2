@@ -500,6 +500,34 @@ def test_release_list_tolerates_foreign_prerelease_and_draft_records(
 
 
 @pytest.mark.parametrize("host", _powershells(), ids=lambda value: Path(value).stem)
+def test_python_bytecode_cache_is_not_state_drift(
+    host: str, tmp_path: Path, fake_gh: Path
+) -> None:
+    """Running a skill's Python helper leaves __pycache__ inside the owned
+    directory; the fingerprint must ignore it exactly like the engine does."""
+    environment, home, fixture = _environment(tmp_path, fake_gh)
+    first = _run(host, environment, "-HookFallback")
+    assert first.returncode == 0, first.stdout + first.stderr
+    assert "TOOLS_APPLIED_NEXT_SESSION" in first.stdout
+    cache = (
+        home / ".claude" / "skills" / "ru-writing-style"
+        / "__pycache__" / "helper.cpython-312.pyc"
+    )
+    cache.parent.mkdir(parents=True)
+    cache.write_bytes(b"bytecode cache")
+
+    second = _run(host, environment, "-HookFallback")
+
+    assert second.returncode == 0, second.stdout + second.stderr
+    events = (
+        home / ".llm-foundation" / "state" / "session-tools" / "claude"
+        / "events.log"
+    ).read_text(encoding="utf-8").splitlines()
+    assert "result=NO_UPDATE" in events[-1], events[-1]
+    assert cache.read_bytes() == b"bytecode cache"
+
+
+@pytest.mark.parametrize("host", _powershells(), ids=lambda value: Path(value).stem)
 def test_mutable_stable_release_is_rejected_before_verification(
     host: str, tmp_path: Path, fake_gh: Path
 ) -> None:
