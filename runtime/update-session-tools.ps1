@@ -2,6 +2,7 @@
 param(
     [switch]$ManagedPreflight,
     [switch]$HookFallback,
+    [switch]$ExtendedNetworkBudget,
     [string]$TransactionId,
     [Int64]$StartTick,
     [Int64]$MutationCutoffTick,
@@ -68,6 +69,18 @@ if ($HookFallback) {
     $MutationCutoffTick = $StartTick + 22L * $StopwatchFrequency
     $KillTick = $StartTick + 25L * $StopwatchFrequency
     $HardDeadlineTick = $StartTick + 30L * $StopwatchFrequency
+}
+
+# The session hook (managed or fallback) must stay inside the strict 22s
+# network budget, but a deliberate manual run may face a slow proxy where
+# one gh attestation call takes ~18s: with -ExtendedNetworkBudget the
+# network phase gets its own deadline and the mutation ticks are re-issued
+# after the network phase completes.
+$ExtendedRun = [bool]($HookFallback -and $ExtendedNetworkBudget)
+$NetworkDeadlineTick = if ($ExtendedRun) {
+    $StartTick + 300L * $StopwatchFrequency
+} else {
+    $MutationCutoffTick
 }
 
 if ($ManagedPreflight -and [Diagnostics.Stopwatch]::GetTimestamp() -ge $HardDeadlineTick) {
@@ -1006,7 +1019,7 @@ try {
     $GhCommand = Get-Command gh.exe -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
     if (-not $GhCommand) { Write-Event '-' 'BLOCKED_GH_REQUIRED' 'gh-missing'; exit 0 }
     $Gh = [string]$GhCommand.Source
-    $List = Invoke-BoundedProcess $Gh @('release', 'list', '--repo', $Repository, '--limit', '20', '--json', 'tagName,isDraft,isPrerelease,isImmutable,publishedAt') $MutationCutoffTick
+    $List = Invoke-BoundedProcess $Gh @('release', 'list', '--repo', $Repository, '--limit', '20', '--json', 'tagName,isDraft,isPrerelease,isImmutable,publishedAt') $NetworkDeadlineTick
     if ($List.TimedOut -or $List.ExitCode -ne 0) { Write-Event '-' 'SKIPPED_OFFLINE' 'release-list-failed'; exit 0 }
     try {
         $HasIllegalJsonWhitespace = $false
@@ -1063,16 +1076,16 @@ try {
         Write-Event '-' 'REJECTED_RELEASE_LIST' 'strict-json'
         exit 0
     }
-    $Verify = Invoke-BoundedProcess $Gh @('release', 'verify', $script:SelectedTag, '--repo', $Repository) $MutationCutoffTick
+    $Verify = Invoke-BoundedProcess $Gh @('release', 'verify', $script:SelectedTag, '--repo', $Repository) $NetworkDeadlineTick
     if ($Verify.TimedOut -or $Verify.ExitCode -ne 0) { Write-Event $script:SelectedTag 'REJECTED_VERIFICATION' 'release-verify'; exit 0 }
     if (Test-ReparseTree $DownloadsPath) { Write-Event $script:SelectedTag 'REJECTED_PATH' 'download-reparse'; exit 0 }
     if (Test-Path -LiteralPath $DownloadsPath) { Remove-Item -LiteralPath $DownloadsPath -Recurse -Force }
     [IO.Directory]::CreateDirectory($DownloadsPath) | Out-Null
-    $DownloadManifest = Invoke-BoundedProcess $Gh @('release', 'download', $script:SelectedTag, '--repo', $Repository, '--pattern', 'release-manifest.json', '--dir', $DownloadsPath) $MutationCutoffTick
+    $DownloadManifest = Invoke-BoundedProcess $Gh @('release', 'download', $script:SelectedTag, '--repo', $Repository, '--pattern', 'release-manifest.json', '--dir', $DownloadsPath) $NetworkDeadlineTick
     $ReleaseManifestPath = Join-Path $DownloadsPath 'release-manifest.json'
     if ($DownloadManifest.TimedOut -or $DownloadManifest.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $ReleaseManifestPath -PathType Leaf)) { Write-Event $script:SelectedTag 'REJECTED_DOWNLOAD' 'manifest-download'; exit 0 }
-    $VerifyManifest = Invoke-BoundedProcess $Gh @('release', 'verify-asset', $script:SelectedTag, $ReleaseManifestPath, '--repo', $Repository) $MutationCutoffTick
-    $AttestManifest = Invoke-BoundedProcess $Gh @('attestation', 'verify', $ReleaseManifestPath, '--repo', $Repository) $MutationCutoffTick
+    $VerifyManifest = Invoke-BoundedProcess $Gh @('release', 'verify-asset', $script:SelectedTag, $ReleaseManifestPath, '--repo', $Repository) $NetworkDeadlineTick
+    $AttestManifest = Invoke-BoundedProcess $Gh @('attestation', 'verify', $ReleaseManifestPath, '--repo', $Repository) $NetworkDeadlineTick
     if ($VerifyManifest.TimedOut -or $AttestManifest.TimedOut -or $VerifyManifest.ExitCode -ne 0 -or $AttestManifest.ExitCode -ne 0) { Write-Event $script:SelectedTag 'REJECTED_VERIFICATION' 'manifest-attestation'; exit 0 }
     try {
         $ReleaseManifestBytes = [IO.File]::ReadAllBytes($ReleaseManifestPath)
@@ -1084,12 +1097,18 @@ try {
         exit 0
     }
     $AssetName = [string]$ReleaseManifest.session_tools_asset.name
-    $DownloadAsset = Invoke-BoundedProcess $Gh @('release', 'download', $script:SelectedTag, '--repo', $Repository, '--pattern', $AssetName, '--dir', $DownloadsPath) $MutationCutoffTick
+    $DownloadAsset = Invoke-BoundedProcess $Gh @('release', 'download', $script:SelectedTag, '--repo', $Repository, '--pattern', $AssetName, '--dir', $DownloadsPath) $NetworkDeadlineTick
     $AssetPath = Join-Path $DownloadsPath $AssetName
     if ($DownloadAsset.TimedOut -or $DownloadAsset.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $AssetPath -PathType Leaf)) { Write-Event $script:SelectedTag 'REJECTED_DOWNLOAD' 'asset-download'; exit 0 }
-    $VerifyAsset = Invoke-BoundedProcess $Gh @('release', 'verify-asset', $script:SelectedTag, $AssetPath, '--repo', $Repository) $MutationCutoffTick
-    $AttestAsset = Invoke-BoundedProcess $Gh @('attestation', 'verify', $AssetPath, '--repo', $Repository) $MutationCutoffTick
+    $VerifyAsset = Invoke-BoundedProcess $Gh @('release', 'verify-asset', $script:SelectedTag, $AssetPath, '--repo', $Repository) $NetworkDeadlineTick
+    $AttestAsset = Invoke-BoundedProcess $Gh @('attestation', 'verify', $AssetPath, '--repo', $Repository) $NetworkDeadlineTick
     if ($VerifyAsset.TimedOut -or $AttestAsset.TimedOut -or $VerifyAsset.ExitCode -ne 0 -or $AttestAsset.ExitCode -ne 0) { Write-Event $script:SelectedTag 'REJECTED_VERIFICATION' 'asset-attestation'; exit 0 }
+    if ($ExtendedRun) {
+        $script:StartTick = [Diagnostics.Stopwatch]::GetTimestamp()
+        $script:MutationCutoffTick = $script:StartTick + 22L * $StopwatchFrequency
+        $script:KillTick = $script:StartTick + 25L * $StopwatchFrequency
+        $script:HardDeadlineTick = $script:StartTick + 30L * $StopwatchFrequency
+    }
     try {
         $ReleaseManifestBytesAfterVerification = [IO.File]::ReadAllBytes($ReleaseManifestPath)
         if ((Get-Sha256Bytes $ReleaseManifestBytesAfterVerification) -cne

@@ -93,6 +93,9 @@ def fake_gh(tmp_path_factory: pytest.TempPathFactory) -> Path:
                 static int Main(string[] args)
                 {
                     Log(args);
+                    int delay;
+                    if (Int32.TryParse(Environment.GetEnvironmentVariable("FAKE_GH_DELAY_MS"), out delay) && delay > 0)
+                        System.Threading.Thread.Sleep(delay);
                     if (args.Length >= 2 && args[0] == "release" && args[1] == "list")
                     {
                         Console.Write(Environment.GetEnvironmentVariable("FAKE_GH_RELEASES_JSON") ?? "[]");
@@ -497,6 +500,51 @@ def test_release_list_tolerates_foreign_prerelease_and_draft_records(
     assert "REJECTED_RELEASE_LIST" not in result.stdout + result.stderr
     destination = home / ".claude" / "skills" / "ru-writing-style" / "SKILL.md"
     assert destination.read_bytes() == fixture["payload"]
+
+
+@pytest.mark.parametrize("host", _powershells(), ids=lambda value: Path(value).stem)
+def test_fallback_applies_update_over_slow_network(
+    host: str, tmp_path: Path, fake_gh: Path
+) -> None:
+    """A slow proxy makes each gh call take seconds; the fallback run owns a
+    wider network budget and re-issues the mutation ticks after the network
+    phase, so the update still applies. The managed session budget is not
+    loosened."""
+    environment, home, fixture = _environment(tmp_path, fake_gh)
+    environment["FAKE_GH_DELAY_MS"] = "4000"
+
+    result = _run(host, environment, "-HookFallback", "-ExtendedNetworkBudget", timeout=120)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "TOOLS_APPLIED_NEXT_SESSION" in result.stdout
+    destination = home / ".claude" / "skills" / "ru-writing-style" / "SKILL.md"
+    assert destination.read_bytes() == fixture["payload"]
+    state = json.loads(
+        (
+            home / ".llm-foundation" / "state" / "session-tools" / "claude"
+            / "state.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert state["release_tag"] == TAG
+    assert state["complete"] is True
+
+
+@pytest.mark.parametrize("host", _powershells(), ids=lambda value: Path(value).stem)
+def test_hook_fallback_keeps_strict_network_budget_on_slow_network(
+    host: str, tmp_path: Path, fake_gh: Path
+) -> None:
+    """Without the explicit -ExtendedNetworkBudget flag the fallback keeps the
+    strict session budget: a slow network makes it skip, never hang."""
+    environment, home, fixture = _environment(tmp_path, fake_gh)
+    environment["FAKE_GH_DELAY_MS"] = "4000"
+
+    started = time.monotonic()
+    result = _run(host, environment, "-HookFallback", timeout=60)
+    elapsed = time.monotonic() - started
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "TOOLS_APPLIED_NEXT_SESSION" not in result.stdout
+    assert elapsed < 45, f"hook fallback took {elapsed:.1f}s"
 
 
 @pytest.mark.parametrize("host", _powershells(), ids=lambda value: Path(value).stem)
