@@ -192,7 +192,7 @@ def _write_release(
         "version": VERSION,
         "tag": TAG,
         "channel": "stable",
-        "client": {"id": "claude-code", "supported_version": "2.1.218"},
+        "client": {"id": "claude-code", "supported_version": "2.1.114"},
         "foundation_engine_version": "0.3.0",
         "foundation_engine_manifest_sha256": "1" * 64,
         "source": {

@@ -47,7 +47,7 @@ def test_offline_contract_overlay_is_explicit_and_fail_closed():
 
     assert contract == original
     assert original["client"]["acceptance"] == "PASS"
-    assert original["client"]["supported_version"] == "2.1.218"
+    assert original["client"]["supported_version"] == "2.1.114"
     assert synthetic["client"] == {
         "id": original["client"]["id"],
         "supported_version": "0.0.0-offline",
@@ -91,7 +91,7 @@ def test_accepted_client_candidate_report_remains_non_stable():
         asset={"sha256": "d" * 64, "bytes": 123},
         matrix={"pwsh": "PASS", "powershell": "PASS"},
         synthetic=False,
-        client_version="2.1.218",
+        client_version="2.1.114",
     )
 
     assert report["CLIENT_CONTRACT"] == "ACCEPTED_BINARY"

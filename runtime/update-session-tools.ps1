@@ -500,7 +500,7 @@ function Assert-ReleaseManifest {
         $Manifest.target -cne 'claude' -or $Manifest.version -cne $script:SelectedVersion -or
         $Manifest.tag -cne $script:SelectedTag -or $Manifest.channel -cne 'stable') { throw 'release identity differs' }
     Assert-ExactProperties $Manifest.client @('id', 'supported_version') 'client'
-    if ($Manifest.client.id -cne 'claude-code' -or $Manifest.client.supported_version -cne '2.1.218') { throw 'client binding differs' }
+    if ($Manifest.client.id -cne 'claude-code' -or $Manifest.client.supported_version -cne '2.1.114') { throw 'client binding differs' }
     Assert-ExactProperties $Manifest.source @('repository', 'commit', 'tree', 'transformation') 'source'
     if ($Manifest.source.repository -cne $RepositoryUrl -or
         $Manifest.source.commit -cnotmatch '^[0-9a-f]{40}$' -or

@@ -41,7 +41,7 @@ each release; VPN or proxy transport cannot be used to bypass a region,
 account, or safeguard restriction. See
 [`docs/ANTHROPIC-POLICY-AUDIT.md`](docs/ANTHROPIC-POLICY-AUDIT.md).
 
-Claude Code `2.1.218` is pinned to the official
+Claude Code `2.1.114` is pinned to the official
 `win32-x64/claude.exe` binary with SHA-256
 `81fcf59bb7abb558aedc6f2361f4723b3d757d28e799962d88b18b4520df66ca`,
 valid Authenticode signer `Anthropic, PBC`, and zero-model

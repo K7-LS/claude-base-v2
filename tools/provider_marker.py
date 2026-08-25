@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 
-SUPPORTED_CLIENT = "2.1.218"
+SUPPORTED_CLIENT = "2.1.114"
 PROMPT = "Ответь ровно: CLAUDE_BASE_CANARY_OK"
 EXPECTED_RESPONSE = "CLAUDE_BASE_CANARY_OK"
 SUPPORTED_REGIONS_URL = "https://www.anthropic.com/supported-countries"

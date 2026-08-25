@@ -39,7 +39,7 @@ def _evidence(kind: str, binding: dict[str, object]) -> dict[str, object]:
         value = {
             "schema_version": 1,
             "target": "claude",
-            "client": {"id": "claude-code", "version": "2.1.218"},
+            "client": {"id": "claude-code", "version": "2.1.114"},
             "provider": "anthropic",
             "model": "sonnet",
             "effort": "low",
@@ -70,7 +70,7 @@ def _evidence(kind: str, binding: dict[str, object]) -> dict[str, object]:
             "target": "claude",
             "version": "0.1.0",
             "release_binding": binding,
-            "client": {"id": "claude-code", "version": "2.1.218"},
+            "client": {"id": "claude-code", "version": "2.1.114"},
             "CLAUDE_CANARY": "PASS",
             "model_requests": 0,
             "lifecycle": {
@@ -168,7 +168,7 @@ def test_final_evidence_records_absent_marker_as_not_required():
 def test_final_evidence_warns_when_canary_client_differs_from_pin():
     binding = _binding()
     canary = _evidence("canary", binding)
-    canary["client"] = {"id": "claude-code", "version": "2.1.114"}
+    canary["client"] = {"id": "claude-code", "version": "2.1.113"}
     canary["evidence_body_sha256"] = finalizer.evidence_body_sha256(canary)
 
     final = finalizer.compose_final_evidence(
@@ -179,6 +179,6 @@ def test_final_evidence_warns_when_canary_client_differs_from_pin():
 
     assert final["verdicts"]["CLAUDE_CANARY"] == "PASS"
     assert any(
-        "2.1.114" in limitation and "2.1.218" in limitation
+        "2.1.114" in limitation and "2.1.114" in limitation
         for limitation in final["limitations"]
     )

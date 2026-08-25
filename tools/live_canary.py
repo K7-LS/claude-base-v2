@@ -39,8 +39,8 @@ offline_runner = _load_tool(
 
 TARGET = "claude"
 CLIENT_ID = "claude-code"
-CLIENT_VERSION = "2.1.218"
-CLIENT_VERSION_OUTPUT = "2.1.218 (Claude Code)"
+CLIENT_VERSION = "2.1.114"
+CLIENT_VERSION_OUTPUT = "2.1.114 (Claude Code)"
 CANARY_GATE = "CLAUDE_CANARY"
 
 

@@ -27,7 +27,7 @@ def test_live_canary_evidence_binds_candidate_client_and_rollback():
     }
     evidence = canary.build_canary_evidence(
         release_binding=binding,
-        client_version="2.1.218",
+        client_version="2.1.114",
         lifecycle={
             "status": "PASS",
             "lifecycle": {
@@ -65,7 +65,7 @@ def test_live_canary_evidence_rejects_failed_preservation():
                 "version": "0.1.0",
                 "asset": {"sha256": "a" * 64, "bytes": 123},
             },
-            client_version="2.1.218",
+            client_version="2.1.114",
             lifecycle={
                 "status": "PASS",
                 "lifecycle": {
