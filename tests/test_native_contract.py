@@ -283,7 +283,7 @@ def test_claude_runtime_does_not_upload_or_overwrite_client_state():
         (ROOT / "runtime" / "release-contract.json").read_text(encoding="utf-8")
     )
     assert release["client"]["acceptance"] == "PASS"
-    assert release["client"]["supported_version"] == "2.1.218"
+    assert release["client"]["supported_version"] == "2.1.114"
     client_evidence = json.loads(
         (ROOT / "runtime" / "client-acceptance.json").read_text(
             encoding="utf-8"
@@ -292,18 +292,18 @@ def test_claude_runtime_does_not_upload_or_overwrite_client_state():
     assert client_evidence["verdict"] == "PASS"
     assert client_evidence["client"] == {
         "id": "claude-code",
-        "version": "2.1.218",
+        "version": "2.1.114",
     }
     assert client_evidence["binary"]["authenticode_status"] == "Valid"
     assert client_evidence["distribution"] == {
         "method": "official-binary",
         "package_id": "win32-x64/claude.exe",
-        "package_version": "2.1.218",
+        "package_version": "2.1.114",
         "scope": "current-user",
-        "source": "https://downloads.claude.ai/claude-code-releases/2.1.218/win32-x64/claude.exe",
+        "source": "https://downloads.claude.ai/claude-code-releases/2.1.114/win32-x64/claude.exe",
     }
     assert client_evidence["binary"]["sha256"] == (
-        "81fcf59bb7abb558aedc6f2361f4723b3d757d28e799962d88b18b4520df66ca"
+        "6f4a961ea8a1d656c41dd71cbef202cb71d13c443f86818c721167c33f8a51fd"
     )
     assert client_evidence["binary"]["signer"] == "Anthropic, PBC"
     assert client_evidence["runtime_smoke"]["model_requests"] == 0

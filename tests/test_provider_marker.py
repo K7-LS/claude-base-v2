@@ -135,7 +135,7 @@ def test_marker_summary_contains_hash_usage_and_no_response_or_identity(
     evidence = marker.summarize_marker(
         result=result,
         eligibility=eligibility,
-        client_version="2.1.218",
+        client_version="2.1.114",
     )
 
     assert evidence["CLAUDE_PROVIDER_MARKER"] == "PASS"
@@ -165,7 +165,7 @@ def test_failed_marker_writes_hash_only_privacy_safe_evidence(
         stdout=stdout,
         stderr=stderr,
         eligibility=eligibility,
-        client_version="2.1.218",
+        client_version="2.1.114",
     )
 
     assert evidence["CLAUDE_PROVIDER_MARKER"] == "NOT_PASS"
@@ -218,7 +218,7 @@ def test_failed_api_result_retains_only_safe_status_metadata(
         stdout=stdout,
         stderr="",
         eligibility=eligibility,
-        client_version="2.1.218",
+        client_version="2.1.114",
     )
 
     assert evidence["failure"]["result_subtype"] == "success"
@@ -242,7 +242,7 @@ def test_failed_marker_process_persists_not_pass_evidence(
         (
             SimpleNamespace(
                 returncode=0,
-                stdout="2.1.218 (Claude Code)\n",
+                stdout="2.1.114 (Claude Code)\n",
                 stderr="",
             ),
             SimpleNamespace(

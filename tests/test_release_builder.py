@@ -154,7 +154,7 @@ def test_native_release_is_deterministic_complete_and_one_way(tmp_path: Path):
     assert binding["source"] == identity
     assert first.manifest["client"] == {
         "id": contract["client"]["id"],
-        "supported_version": "2.1.218",
+        "supported_version": "2.1.114",
     }
 
     root = contract["paths"]["install_root"]
@@ -324,7 +324,7 @@ def test_release_binding_rejects_session_asset_name_not_bound_to_parent_version(
         "target": "claude",
         "version": "0.1.1",
         "tag": "claude-v0.1.1",
-        "client": {"id": "claude-code", "supported_version": "2.1.218"},
+        "client": {"id": "claude-code", "supported_version": "2.1.114"},
         "asset": {"name": "claude-base-0.1.1.zip"},
         "package_manifest_sha256": "1" * 64,
         "components_lock_sha256": "2" * 64,
@@ -475,7 +475,7 @@ def test_legacy_release_manifest_remains_readable_without_session_asset():
         "target": "claude",
         "version": "0.1.0",
         "tag": "claude-v0.1.0",
-        "client": {"id": "claude-code", "supported_version": "2.1.218"},
+        "client": {"id": "claude-code", "supported_version": "2.1.114"},
         "asset": {"name": "claude-base-0.1.0.zip"},
         "package_manifest_sha256": "1" * 64,
         "components_lock_sha256": "2" * 64,

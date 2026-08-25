@@ -6,7 +6,7 @@
   "tag_prefix": "claude-v",
   "client": {
     "id": "claude-code",
-    "supported_version": "2.1.218",
+    "supported_version": "2.1.114",
     "acceptance": "PASS"
   },
   "paths": {

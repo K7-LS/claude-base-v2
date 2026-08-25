@@ -11,7 +11,7 @@ from typing import Any
 TARGET = "claude"
 VERSIONED_CLIENT = {
     "id": "claude-code",
-    "version": "2.1.218",
+    "version": "2.1.114",
 }
 EXPECTED_LIFECYCLE = {
     "plan": "READY",
