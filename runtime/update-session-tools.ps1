@@ -1070,7 +1070,7 @@ try {
     $DownloadManifest = Invoke-BoundedProcess $Gh @('release', 'download', $script:SelectedTag, '--repo', $Repository, '--pattern', 'release-manifest.json', '--dir', $DownloadsPath) $MutationCutoffTick
     $ReleaseManifestPath = Join-Path $DownloadsPath 'release-manifest.json'
     if ($DownloadManifest.TimedOut -or $DownloadManifest.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $ReleaseManifestPath -PathType Leaf)) { Write-Event $script:SelectedTag 'REJECTED_DOWNLOAD' 'manifest-download'; exit 0 }
-    $VerifyManifest = Invoke-BoundedProcess $Gh @('release', 'verify-asset', $script:SelectedTag, 'release-manifest.json', '--repo', $Repository) $MutationCutoffTick
+    $VerifyManifest = Invoke-BoundedProcess $Gh @('release', 'verify-asset', $script:SelectedTag, $ReleaseManifestPath, '--repo', $Repository) $MutationCutoffTick
     $AttestManifest = Invoke-BoundedProcess $Gh @('attestation', 'verify', $ReleaseManifestPath, '--repo', $Repository) $MutationCutoffTick
     if ($VerifyManifest.TimedOut -or $AttestManifest.TimedOut -or $VerifyManifest.ExitCode -ne 0 -or $AttestManifest.ExitCode -ne 0) { Write-Event $script:SelectedTag 'REJECTED_VERIFICATION' 'manifest-attestation'; exit 0 }
     try {
@@ -1086,7 +1086,7 @@ try {
     $DownloadAsset = Invoke-BoundedProcess $Gh @('release', 'download', $script:SelectedTag, '--repo', $Repository, '--pattern', $AssetName, '--dir', $DownloadsPath) $MutationCutoffTick
     $AssetPath = Join-Path $DownloadsPath $AssetName
     if ($DownloadAsset.TimedOut -or $DownloadAsset.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $AssetPath -PathType Leaf)) { Write-Event $script:SelectedTag 'REJECTED_DOWNLOAD' 'asset-download'; exit 0 }
-    $VerifyAsset = Invoke-BoundedProcess $Gh @('release', 'verify-asset', $script:SelectedTag, $AssetName, '--repo', $Repository) $MutationCutoffTick
+    $VerifyAsset = Invoke-BoundedProcess $Gh @('release', 'verify-asset', $script:SelectedTag, $AssetPath, '--repo', $Repository) $MutationCutoffTick
     $AttestAsset = Invoke-BoundedProcess $Gh @('attestation', 'verify', $AssetPath, '--repo', $Repository) $MutationCutoffTick
     if ($VerifyAsset.TimedOut -or $AttestAsset.TimedOut -or $VerifyAsset.ExitCode -ne 0 -or $AttestAsset.ExitCode -ne 0) { Write-Event $script:SelectedTag 'REJECTED_VERIFICATION' 'asset-attestation'; exit 0 }
     try {

@@ -101,7 +101,10 @@ def fake_gh(tmp_path_factory: pytest.TempPathFactory) -> Path:
                     if (args.Length >= 2 && args[0] == "release" && args[1] == "verify")
                         return ExitCode("FAKE_GH_VERIFY_EXIT");
                     if (args.Length >= 2 && args[0] == "release" && args[1] == "verify-asset")
+                    {
+                        if (args.Length < 4 || !File.Exists(args[3])) return 1;
                         return ExitCode("FAKE_GH_VERIFY_ASSET_EXIT");
+                    }
                     if (args.Length >= 3 && args[0] == "attestation" && args[1] == "verify")
                     {
                         int exit = ExitCode("FAKE_GH_ATTEST_EXIT");
@@ -445,10 +448,10 @@ def test_verified_session_asset_is_applied_with_cyrillic_and_exact_state(
         f"release\tlist\t--repo\t{REPOSITORY}\t--limit\t20\t--json\ttagName,isDraft,isPrerelease,isImmutable,publishedAt",
         f"release\tverify\t{TAG}\t--repo\t{REPOSITORY}",
         f"release\tdownload\t{TAG}\t--repo\t{REPOSITORY}\t--pattern\trelease-manifest.json\t--dir\t{home / '.llm-foundation' / 'state' / 'session-tools' / 'claude' / 'downloads'}",
-        f"release\tverify-asset\t{TAG}\trelease-manifest.json\t--repo\t{REPOSITORY}",
+        f"release\tverify-asset\t{TAG}\t{home / '.llm-foundation' / 'state' / 'session-tools' / 'claude' / 'downloads' / 'release-manifest.json'}\t--repo\t{REPOSITORY}",
         f"attestation\tverify\t{home / '.llm-foundation' / 'state' / 'session-tools' / 'claude' / 'downloads' / 'release-manifest.json'}\t--repo\t{REPOSITORY}",
         f"release\tdownload\t{TAG}\t--repo\t{REPOSITORY}\t--pattern\tsession-tools-claude-{VERSION}.zip\t--dir\t{home / '.llm-foundation' / 'state' / 'session-tools' / 'claude' / 'downloads'}",
-        f"release\tverify-asset\t{TAG}\tsession-tools-claude-{VERSION}.zip\t--repo\t{REPOSITORY}",
+        f"release\tverify-asset\t{TAG}\t{home / '.llm-foundation' / 'state' / 'session-tools' / 'claude' / 'downloads' / f'session-tools-claude-{VERSION}.zip'}\t--repo\t{REPOSITORY}",
         f"attestation\tverify\t{home / '.llm-foundation' / 'state' / 'session-tools' / 'claude' / 'downloads' / f'session-tools-claude-{VERSION}.zip'}\t--repo\t{REPOSITORY}",
     ]
 
