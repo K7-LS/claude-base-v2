@@ -299,6 +299,7 @@ function Get-Fingerprint {
     foreach ($File in $Paths) {
         if (Test-ReparseAtOrAbove $File) { throw 'reparse file' }
         $Relative = $File.Substring($Prefix.Length).Replace('\', '/')
+        if ($Relative -cmatch '(^|/)__pycache__/[^/]+\.pyc$') { continue }
         [void]$Builder.Append($Relative).Append([char]0).Append((Get-Sha256File $File)).Append("`n")
     }
     return Get-Sha256Bytes $Utf8NoBom.GetBytes($Builder.ToString())
