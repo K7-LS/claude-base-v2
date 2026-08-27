@@ -1,30 +1,31 @@
 {
-  "schema_version": 1,
-  "target": "claude",
-  "replace_files": [
-    ".claude/CLAUDE.md",
-    ".claude/base/VERSION",
-    ".claude/base/components.lock.json",
-    ".claude/base/desired-state.json"
-  ],
-  "exact_directories": [
-    ".claude/agents",
-    ".claude/base/cold",
-    ".claude/base/foundation",
-    ".claude/base/runtime",
-    ".claude/commands",
-    ".claude/skills/sync-base"
-  ],
-  "preserved_paths": [
-    ".claude.json",
-    ".claude/backups",
-    ".claude/base/state",
-    ".claude/file-history",
-    ".claude/history.jsonl",
-    ".claude/plans",
-    ".claude/plugins",
-    ".claude/projects",
-    ".claude/tasks",
-    "projects"
-  ]
+ "schema_version": 1,
+ "target": "claude",
+ "replace_files": [
+  ".claude/CLAUDE.md",
+  ".claude/base/VERSION",
+  ".claude/base/components.lock.json",
+  ".claude/base/desired-state.json"
+ ],
+ "exact_directories": [
+  ".claude/agents",
+  ".claude/base/cold",
+  ".claude/base/foundation",
+  ".claude/base/runtime",
+  ".claude/commands",
+  ".claude/core",
+  ".claude/skills/sync-base"
+ ],
+ "preserved_paths": [
+  ".claude.json",
+  ".claude/backups",
+  ".claude/base/state",
+  ".claude/file-history",
+  ".claude/history.jsonl",
+  ".claude/plans",
+  ".claude/plugins",
+  ".claude/projects",
+  ".claude/tasks",
+  "projects"
+ ]
 }
