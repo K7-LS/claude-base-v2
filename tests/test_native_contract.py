@@ -479,6 +479,93 @@ def test_claude_sync_runtime_is_native_and_accepts_semver_client_versions(
         if value
     ],
 )
+def test_claude_sync_recovers_unknown_entries_from_plan_on_blocked_install(
+    executable, tmp_path
+):
+    # Смоук 0.1.24 (2026-08-28): движок на install отдаёт BLOCKED_USER_DECISION
+    # ошибкой БЕЗ unknown_entries (Throw-Foundation в install-ветке) — полный
+    # список несёт только plan. Скилл обязан сходить в plan за списком,
+    # сохранить его как local exceptions и повторить install; обращение к
+    # отсутствующему свойству под StrictMode роняло весь синк в BLOCKED.
+    control = ROOT / "control-skills" / "sync-base"
+    script = control / "tools" / "sync_base.ps1"
+    call_log = tmp_path / "calls.log"
+    fake_foundation = tmp_path / "foundation.ps1"
+    blocked_install = json.dumps(
+        {
+            "status": "BLOCKED_USER_DECISION",
+            "code": "BLOCKED_USER_DECISION",
+            "message": "Unknown managed entries require an explicit decision",
+        }
+    )
+    blocked_plan = json.dumps(
+        {
+            "status": "BLOCKED_USER_DECISION",
+            "unknown_entries": [
+                {"kind": "skill", "path": ".claude/skills/codex-bridge"}
+            ],
+        }
+    )
+    fake_foundation.write_text(
+        "param([Parameter(ValueFromRemainingArguments=$true)]$Rest)\n"
+        f"Add-Content -LiteralPath '{call_log}' -Encoding UTF8 "
+        "-Value ($Rest -join ' ')\n"
+        "$command = [string]$Rest[0]\n"
+        "$joined = $Rest -join ' '\n"
+        "if ($command -eq 'plan') {\n"
+        f"    Write-Output '{blocked_plan}'\n"
+        "    exit 20\n"
+        "}\n"
+        "if ($command -eq 'install' -and\n"
+        "    $joined -notmatch 'LocalExceptionPath') {\n"
+        f"    Write-Output '{blocked_install}'\n"
+        "    exit 20\n"
+        "}\n"
+        "Write-Output '{\"status\":\"READY\"}'\n"
+        "exit 0\n",
+        encoding="utf-8-sig",
+    )
+    driver = tmp_path / "driver.ps1"
+    driver.write_text(
+        f". '{script}' -LibraryMode "
+        f"-PolicyPath '{control / 'sync-policy.json'}' "
+        f"-TargetHome '{tmp_path}'\n"
+        "$verified = [pscustomobject]@{\n"
+        f"    foundation_path = '{fake_foundation}'\n"
+        f"    asset_path = '{tmp_path / 'claude-base.zip'}'\n"
+        "    client_id = 'claude-code'\n"
+        "}\n"
+        "Invoke-LlmVerifiedWorkflow -Verified $verified "
+        "-ClientVersion '2.1.114'\n",
+        encoding="utf-8-sig",
+    )
+    result = subprocess.run(
+        [executable, "-NoProfile", "-File", str(driver)],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+        timeout=60,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    calls = call_log.read_text(encoding="utf-8-sig").splitlines()
+    commands = [row.split(" ", 1)[0] for row in calls]
+    assert commands == ["install", "plan", "install"]
+    assert "-LocalExceptionPath .claude/skills/codex-bridge" in calls[-1]
+
+
+@pytest.mark.parametrize(
+    "executable",
+    [
+        value
+        for value in (
+            shutil.which("pwsh"),
+            shutil.which("powershell.exe"),
+        )
+        if value
+    ],
+)
 def test_claude_session_hook_notifies_without_an_installed_base(
     executable, tmp_path
 ):
