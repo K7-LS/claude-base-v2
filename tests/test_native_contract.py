@@ -92,12 +92,18 @@ def _scalar(frontmatter: str, key: str) -> str:
 
 
 def test_claude_hot_layer_is_native_compact_and_one_way():
+    # Ревизия 2026-08-26 (отчёт Д1 реворка): hot-слой обязан подключать ядро
+    # правил и личный слой. Прежний контракт (<=2000 байт, запрет упоминания
+    # auto-push) вычистил @import и ослепил Claude на 33/48 правил — тест
+    # теперь защищает наличие импортов, а не их отсутствие.
     hot = (ROOT / "CLAUDE.md").read_text(encoding="utf-8")
-    assert len(hot.encode("utf-8")) <= 2000
+    assert len(hot.encode("utf-8")) <= 4500
+    assert "@core/AGENTS.core.md" in hot
+    assert "@CLAUDE.user.md" in hot
+    assert "## Обезличивание" in hot
+    assert "## Архитектура" in hot
     assert "@~/" not in hot
-    assert "@AGENTS.md" not in hot
     assert ".codex" not in hot.lower()
-    assert "auto-push" not in hot.lower()
     assert "feedback" not in hot.lower()
     assert "простой разговор" in hot.lower()
 
@@ -377,7 +383,10 @@ def test_claude_static_token_budget_passes_without_claiming_live_ab():
 
     report = module.audit_static_context(ROOT, "claude")
     assert report["results"]["STATIC_TOKEN_ACCEPTANCE"] == "PASS"
-    assert report["results"]["base_controlled_startup_reduction"] >= 0.83
+    # Порог снижен 0.83 -> 0.79 ревизией 2026-08-26: hot-слой вернул
+    # @import ядра правил (фактическая редукция ~0.80) — осознанная цена
+    # за возврат железных правил, см. отчёт Д1 реворка.
+    assert report["results"]["base_controlled_startup_reduction"] >= 0.79
     assert report["results"]["MATCHED_AB"] == "NOT_RUN"
     assert report["candidate"]["cold_payload_in_startup"] is False
     assert report["candidate"]["surfaces"]["agents_discovery"]["count"] == 16
