@@ -479,9 +479,12 @@ def test_claude_sync_runtime_is_native_and_accepts_semver_client_versions(
         if value
     ],
 )
-def test_claude_session_hook_is_silent_without_an_installed_base(
+def test_claude_session_hook_notifies_without_an_installed_base(
     executable, tmp_path
 ):
+    # Ревизия 2026-08-28 (блокер №3): без установленного релизного слоя хук
+    # больше НЕ молчит — уведомляет о доступном релизе с пометкой «слой не
+    # установлен». Без сети допускается тишина, но не мусор и не падение.
     result = subprocess.run(
         [
             executable,
@@ -497,7 +500,10 @@ def test_claude_session_hook_is_silent_without_an_installed_base(
         timeout=30,
     )
     assert result.returncode == 0
-    assert not (result.stdout + result.stderr).strip()
+    combined = (result.stdout + result.stderr).strip()
+    if combined:
+        payload = json.loads(combined)
+        assert "release layer is not installed" in payload["systemMessage"]
 
 
 @pytest.mark.parametrize(

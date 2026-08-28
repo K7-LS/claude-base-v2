@@ -15,7 +15,10 @@ function Get-DailyReleaseMessage {
     . $ConnectionRuntime
     $BaseHome = Join-Path $env:USERPROFILE '.claude\base'
     $VersionPath = Join-Path $BaseHome 'VERSION'
-    if (-not (Test-Path -LiteralPath $VersionPath -PathType Leaf)) { return $null }
+    # Без установленного релизного слоя уведомление всё равно нужно —
+    # иначе старые consumer-ПК никогда не узнают о существовании обновлений
+    # (фикс блокера №3 ревизии, 2026-08-28).
+    $Installed = Test-Path -LiteralPath $VersionPath -PathType Leaf
 
     $StateRoot = Join-Path $BaseHome 'state'
     $StatePath = Join-Path $StateRoot 'update-check.json'
@@ -55,9 +58,14 @@ function Get-DailyReleaseMessage {
     Write-Utf8NoBom $StatePath ($StatePayload + "`n")
     if (-not $Stable) { return $null }
 
-    $CurrentText = (Get-Content -LiteralPath $VersionPath -Raw -Encoding UTF8).Trim()
+    $CurrentText = if ($Installed) {
+        (Get-Content -LiteralPath $VersionPath -Raw -Encoding UTF8).Trim()
+    } else { '0.0.0' }
     $LatestText = ([string]$Stable.tag_name) -replace '^claude-v', ''
     if ([version]$LatestText -le [version]$CurrentText) { return $null }
+    if (-not $Installed) {
+        return "Claude-base $LatestText is available; release layer is not installed on this PC. Run `$sync-base to verify and install it."
+    }
     return "Claude-base $LatestText is available. Run `$sync-base to verify and install it."
 }
 

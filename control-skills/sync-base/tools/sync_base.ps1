@@ -18,9 +18,10 @@ if ([string]::IsNullOrWhiteSpace($PolicyPath)) {
         'sync-policy.json'
 }
 
-# Allowed remote operations:
-# gh release download
-# gh release list
+# Allowed remote operations (анонимный GitHub REST API через curl,
+# гейт gh снят 2026-08-28 — репозиторий публичный):
+# GET /repos/<repo>/releases
+# GET release asset (browser_download_url)
 
 function Get-LlmSha256Bytes {
     param(
@@ -153,39 +154,69 @@ function Select-LlmStableRelease {
     ).tag
 }
 
-function Invoke-LlmGh {
+function Invoke-LlmFileGet {
     param(
-        [Parameter(Mandatory = $true)][string[]]$Arguments
+        [Parameter(Mandatory = $true)][string]$Uri,
+        [Parameter(Mandatory = $true)][string]$OutFile,
+        [int]$TimeoutSeconds = 300
     )
 
-    $output = & gh @Arguments 2>&1
-    if ($LASTEXITCODE -ne 0) {
+    $parsed = $null
+    if (-not [Uri]::TryCreate($Uri, [UriKind]::Absolute, [ref]$parsed) -or
+        $parsed.Scheme -cne 'https') {
+        throw 'File GET request contract is invalid.'
+    }
+    $curl = Get-Command curl.exe -ErrorAction SilentlyContinue
+    if ($null -eq $curl) {
+        throw 'Windows curl.exe is required.'
+    }
+    & $curl.Source @(
+        '--fail',
+        '--silent',
+        '--show-error',
+        '--location',
+        '--connect-timeout',
+        '10',
+        '--max-time',
+        [string]$TimeoutSeconds,
+        '--user-agent',
+        'llm-base-sync/1',
+        '--output',
+        $OutFile,
+        '--url',
+        $Uri
+    ) 2>&1 | Out-Null
+    if ($LASTEXITCODE -ne 0 -or
+        -not (Test-Path -LiteralPath $OutFile -PathType Leaf)) {
         throw (
-            'GitHub verification command failed: gh ' +
-            ($Arguments[0..([Math]::Min(1, $Arguments.Count - 1))] -join ' ')
+            'Release asset download failed: ' +
+            [IO.Path]::GetFileName($OutFile)
         )
     }
-    return ($output -join "`n")
 }
 
 function Get-LlmLatestStableTag {
-    $json = Invoke-LlmGh -Arguments @(
-        'release',
-        'list',
-        '-R',
-        [string]$script:LlmSyncPolicy.repository,
-        '--limit',
-        '100',
-        '--json',
-        'tagName,isDraft,isPrerelease'
-    )
-    try {
-        $releases = $json | ConvertFrom-Json -ErrorAction Stop
-    }
-    catch {
-        throw 'GitHub release list JSON is invalid.'
-    }
-    return Select-LlmStableRelease -Releases $releases
+    $releases = Invoke-LlmJsonGet `
+        -Uri (
+            'https://api.github.com/repos/' +
+            [string]$script:LlmSyncPolicy.repository +
+            '/releases?per_page=100'
+        ) `
+        -UserAgent 'llm-base-sync/1' `
+        -TimeoutSeconds 30
+    $mapped = @(foreach ($release in @($releases)) {
+        [pscustomobject]@{
+            tagName      = [string]$release.tag_name
+            isDraft      = [bool]$release.draft
+            isPrerelease = [bool]$release.prerelease
+            assets       = $release.assets
+        }
+    })
+    $tag = Select-LlmStableRelease -Releases $mapped
+    $script:LlmSelectedRelease = @(
+        $mapped | Where-Object { [string]$_.tagName -ceq $tag }
+    )[0]
+    return $tag
 }
 
 function Read-LlmZipEntryBytes {
@@ -490,12 +521,14 @@ function Assert-LlmReleaseFiles {
             [int]$engineManifest.protocol_version -ne 1 -or
             [string]$engineManifest.engine_version -cne $foundationVersion -or
             [string]$engineManifest.network -cne 'offline' -or
-            (@($engineManifest.commands) -join ',') -cne (
-                'apply,doctor,install,inventory,plan,rollback'
-            ) -or
-            (@($engineManifest.supported_powershell) -join ',') -cne (
-                '5.1,7'
-            ) -or
+            @(@('apply', 'doctor', 'install', 'inventory', 'plan', 'rollback') |
+                Where-Object { @($engineManifest.commands) -cnotcontains $_ }
+            ).Count -ne 0 -or
+            @(@('5.1', '7') |
+                Where-Object {
+                    @($engineManifest.supported_powershell) -cnotcontains $_
+                }
+            ).Count -ne 0 -or
             [string]$engineManifest.foundation_ps1_sha256 -cne (
                 Get-LlmSha256Bytes $foundationPayloads['foundation.ps1']
             ) -or
@@ -563,7 +596,8 @@ function Invoke-LlmFoundationCommand {
     param(
         [Parameter(Mandatory = $true)]$Verified,
         [Parameter(Mandatory = $true)][string]$Command,
-        [Parameter(Mandatory = $true)][string]$ClientVersion
+        [Parameter(Mandatory = $true)][string]$ClientVersion,
+        [string[]]$ExtraArguments = @()
     )
 
     $powershell = Get-Command powershell.exe -ErrorAction SilentlyContinue
@@ -594,6 +628,7 @@ function Invoke-LlmFoundationCommand {
             $ClientVersion
         )
     }
+    $arguments += $ExtraArguments
     $output = & $powershell.Source @arguments 2>&1
     return [pscustomobject][ordered]@{
         exit_code = $LASTEXITCODE
@@ -612,10 +647,48 @@ function Invoke-LlmVerifiedWorkflow {
         -Command 'install' `
         -ClientVersion $ClientVersion
     if ([int]$result.exit_code -ne 0) {
+        # BLOCKED_USER_DECISION: локальные записи вне релиза НЕ удаляем и не
+        # блокируемся — сохраняем как local exceptions и повторяем установку
+        # (снятие главного блокера массового обновления, 2026-08-28).
+        $blocked = $null
+        try {
+            $blocked = [string]$result.output |
+                ConvertFrom-Json -ErrorAction Stop
+        } catch {}
+        if ($null -ne $blocked -and
+            [string]$blocked.status -ceq 'BLOCKED_USER_DECISION' -and
+            @($blocked.unknown_entries).Count -gt 0) {
+            $paths = @(foreach ($entry in @($blocked.unknown_entries)) {
+                if ($entry -is [string]) { [string]$entry }
+                elseif ($null -ne ($entry.PSObject.Properties['path'])) {
+                    [string]$entry.path
+                }
+                elseif ($null -ne (
+                    $entry.PSObject.Properties['relative_path'])) {
+                    [string]$entry.relative_path
+                }
+            })
+            $paths = @($paths | Where-Object {
+                -not [string]::IsNullOrWhiteSpace($_)
+            })
+            Write-Host (
+                'Локальные записи вне релиза сохранены как исключения: ' +
+                ($paths -join ', ')
+            )
+            $result = Invoke-LlmFoundationCommand `
+                -Verified $Verified `
+                -Command 'install' `
+                -ClientVersion $ClientVersion `
+                -ExtraArguments @(
+                    '-LocalExceptionPath', ($paths -join '|')
+                )
+        }
+    }
+    if ([int]$result.exit_code -ne 0) {
         throw ('Foundation install failed: ' + [string]$result.output)
     }
     if (-not [string]::IsNullOrWhiteSpace([string]$result.output)) {
-        Write-Output $result.output
+        Write-Host ([string]$result.output)
     }
 }
 
@@ -625,9 +698,6 @@ function Invoke-LlmSyncMain {
     }
     if (-not (Test-Path -LiteralPath $TargetHome -PathType Container)) {
         throw 'Target home does not exist.'
-    }
-    if ($null -eq (Get-Command gh -ErrorAction SilentlyContinue)) {
-        throw 'GitHub CLI (gh) is required.'
     }
     $installedConnectionPath = Join-Path (
         [IO.Path]::GetFullPath($TargetHome)
@@ -654,7 +724,7 @@ function Invoke-LlmSyncMain {
             Get-LlmLatestStableTag
         }
     if ($Check) {
-        Write-Output $tag
+        Write-Host $tag
         return 0
     }
 
@@ -666,23 +736,23 @@ function Invoke-LlmSyncMain {
         Invoke-WithLlmConnection `
             -HomePath $TargetHome `
             -ScriptBlock {
-                Invoke-LlmGh -Arguments @(
-                    'release',
-                    'download',
-                    $tag,
-                    '-R',
-                    [string]$script:LlmSyncPolicy.repository,
-                    '--dir',
-                    $temporary,
-                    '--pattern',
+                $patterns = @(
                     '*-base-*.zip',
-                    '--pattern',
                     'release-manifest.json',
-                    '--pattern',
                     'components.lock.json',
-                    '--pattern',
                     'acceptance-evidence.json'
-                ) | Out-Null
+                )
+                foreach ($asset in @($script:LlmSelectedRelease.assets)) {
+                    $name = [string]$asset.name
+                    $wanted = $false
+                    foreach ($pattern in $patterns) {
+                        if ($name -like $pattern) { $wanted = $true; break }
+                    }
+                    if (-not $wanted) { continue }
+                    Invoke-LlmFileGet `
+                        -Uri ([string]$asset.browser_download_url) `
+                        -OutFile (Join-Path $temporary $name)
+                }
             }
         $verified = Assert-LlmReleaseFiles `
             -Directory $temporary `
@@ -691,7 +761,7 @@ function Invoke-LlmSyncMain {
         Invoke-LlmVerifiedWorkflow `
             -Verified $verified `
             -ClientVersion $clientVersion
-        Write-Output (
+        Write-Host (
             [string]$script:LlmSyncPolicy.target +
             '-base ' + $tag + ' installed and verified.'
         )
