@@ -656,9 +656,28 @@ function Invoke-LlmVerifiedWorkflow {
                 ConvertFrom-Json -ErrorAction Stop
         } catch {}
         if ($null -ne $blocked -and
-            [string]$blocked.status -ceq 'BLOCKED_USER_DECISION' -and
-            @($blocked.unknown_entries).Count -gt 0) {
-            $paths = @(foreach ($entry in @($blocked.unknown_entries)) {
+            [string]$blocked.status -ceq 'BLOCKED_USER_DECISION') {
+            # install отдаёт этот статус ошибкой БЕЗ unknown_entries
+            # (Throw-Foundation в движке) — полный список несёт только plan.
+            $entries = @()
+            if ($null -ne $blocked.PSObject.Properties['unknown_entries']) {
+                $entries = @($blocked.unknown_entries)
+            }
+            if ($entries.Count -eq 0) {
+                $planned = $null
+                try {
+                    $planned = [string](Invoke-LlmFoundationCommand `
+                        -Verified $Verified `
+                        -Command 'plan' `
+                        -ClientVersion $ClientVersion).output |
+                        ConvertFrom-Json -ErrorAction Stop
+                } catch {}
+                if ($null -ne $planned -and
+                    $null -ne $planned.PSObject.Properties['unknown_entries']) {
+                    $entries = @($planned.unknown_entries)
+                }
+            }
+            $paths = @(foreach ($entry in $entries) {
                 if ($entry -is [string]) { [string]$entry }
                 elseif ($null -ne ($entry.PSObject.Properties['path'])) {
                     [string]$entry.path
@@ -671,17 +690,19 @@ function Invoke-LlmVerifiedWorkflow {
             $paths = @($paths | Where-Object {
                 -not [string]::IsNullOrWhiteSpace($_)
             })
-            Write-Host (
-                'Локальные записи вне релиза сохранены как исключения: ' +
-                ($paths -join ', ')
-            )
-            $result = Invoke-LlmFoundationCommand `
-                -Verified $Verified `
-                -Command 'install' `
-                -ClientVersion $ClientVersion `
-                -ExtraArguments @(
-                    '-LocalExceptionPath', ($paths -join '|')
+            if ($paths.Count -gt 0) {
+                Write-Host (
+                    'Локальные записи вне релиза сохранены как исключения: ' +
+                    ($paths -join ', ')
                 )
+                $result = Invoke-LlmFoundationCommand `
+                    -Verified $Verified `
+                    -Command 'install' `
+                    -ClientVersion $ClientVersion `
+                    -ExtraArguments @(
+                        '-LocalExceptionPath', ($paths -join '|')
+                    )
+            }
         }
     }
     if ([int]$result.exit_code -ne 0) {
