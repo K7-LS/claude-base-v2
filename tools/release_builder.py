@@ -725,6 +725,7 @@ def build_release_from_source(
     for path, payload in baseline_entries.items():
         _add(entries, path, payload)
     _add_tree(entries, repo_root / "commands", f"{install_root}/commands")
+    _add_tree(entries, repo_root / "core", f"{install_root}/core")
     _add_tree(entries, repo_root / "cold", f"{install_root}/base/cold")
     _add_tree(
         entries,
