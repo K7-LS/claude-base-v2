@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [string]$PolicyPath = '',
     [string]$TargetHome = $env:USERPROFILE,
