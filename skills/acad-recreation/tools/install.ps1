@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     ORG acad-recreation installer (idempotent). Усиливает autocad-mcp на этом ПК.
 .DESCRIPTION
