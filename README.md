@@ -43,7 +43,7 @@ account, or safeguard restriction. See
 
 Claude Code `2.1.114` is pinned to the official
 `win32-x64/claude.exe` binary with SHA-256
-`81fcf59bb7abb558aedc6f2361f4723b3d757d28e799962d88b18b4520df66ca`,
+`6f4a961ea8a1d656c41dd71cbef202cb71d13c443f86818c721167c33f8a51fd`,
 valid Authenticode signer `Anthropic, PBC`, and zero-model
 `--version`/`--help` smoke. WinGet is not part of this acceptance path. This
 is only `CLIENT_BINARY_ACCEPTANCE: PASS`; employee eligibility, provider
