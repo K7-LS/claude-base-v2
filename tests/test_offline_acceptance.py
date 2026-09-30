@@ -119,3 +119,58 @@ def test_acceptance_uses_strict_canonical_lifecycle_verdicts():
     )
     assert '"install": "CANONICAL"' in runner
     assert '"doctor": "CANONICAL"' in runner
+
+
+def _engine(root: Path, version: str) -> Path:
+    root.mkdir()
+    (root / "VERSION").write_text(version + "\n", encoding="utf-8")
+    (root / "shared-tools.lock.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "tools": [
+                    {
+                        "id": "officecli",
+                        "environment": {
+                            "OFFICECLI_NO_AUTO_INSTALL": "1",
+                            "OFFICECLI_SKIP_UPDATE": "1",
+                        },
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    return root
+
+
+def test_engine_0_5_10_keeps_historical_empty_environment(tmp_path):
+    runner = _load_runner()
+    engine = _engine(tmp_path / "engine", "0.5.10")
+    home = tmp_path / "home"
+    assert runner._expected_installed_environment(engine, "claude", home) == {}
+    assert runner._expected_installed_environment(engine, "opencode", home) == {
+        "OPENCODE_DISABLE_CLAUDE_CODE": "1"
+    }
+
+
+def test_engine_0_5_12_expects_persisted_officecli_environment(tmp_path):
+    runner = _load_runner()
+    engine = _engine(tmp_path / "engine", "0.5.12")
+    home = tmp_path / "home"
+    assert runner._expected_installed_environment(engine, "claude", home) == {
+        "OFFICECLI_NO_AUTO_INSTALL": "1",
+        "OFFICECLI_SKIP_UPDATE": "1",
+        "PATH": str(home / ".llm-foundation" / "bin"),
+    }
+
+
+def test_unknown_engine_has_no_environment_contract(tmp_path):
+    runner = _load_runner()
+    engine = _engine(tmp_path / "engine", "0.5.99")
+    try:
+        runner._expected_installed_environment(engine, "claude", tmp_path)
+    except RuntimeError as error:
+        assert "0.5.99" in str(error)
+    else:
+        raise AssertionError("unknown engine version must be rejected")

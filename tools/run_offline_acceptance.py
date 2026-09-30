@@ -314,6 +314,49 @@ def _read_acceptance_environment(home: Path) -> dict[str, str]:
     }
 
 
+def _expected_installed_environment(
+    foundation_root: Path,
+    target: str,
+    home: Path,
+) -> dict[str, str]:
+    """Пользовательское окружение, которое движок оставляет после install.
+
+    Контракт зависит от версии движка. 0.5.10 держал среду общего OfficeCLI
+    только в процессе. 0.5.12 закрепляет её и каталог
+    `.llm-foundation/bin` в окружении пользователя (в режиме приёмки — в
+    тестовом хранилище) и снимает при rollback. Неизвестная версия не
+    принимается: её поведение не описано.
+    """
+    version = (foundation_root / "VERSION").read_text(encoding="utf-8").strip()
+    expected = (
+        {"OPENCODE_DISABLE_CLAUDE_CODE": "1"}
+        if target == "opencode"
+        else {}
+    )
+    if version == "0.5.10":
+        return expected
+    if version == "0.5.12":
+        lock = json.loads(
+            (foundation_root / "shared-tools.lock.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        tools = lock.get("tools")
+        if not isinstance(tools, list) or len(tools) != 1:
+            raise RuntimeError("Foundation shared tool contract differs")
+        environment = tools[0].get("environment")
+        if not isinstance(environment, dict) or not environment:
+            raise RuntimeError("Foundation shared tool environment differs")
+        expected.update(
+            {str(name): str(value) for name, value in environment.items()}
+        )
+        expected["PATH"] = str(home / ".llm-foundation" / "bin")
+        return expected
+    raise RuntimeError(
+        f"Foundation {version} has no installed environment contract"
+    )
+
+
 def _run_matrix_case(
     *,
     executable: str,
@@ -372,13 +415,17 @@ def _run_matrix_case(
         home=home,
     )
     installed_environment = _read_acceptance_environment(home)
-    expected_environment = (
-        {"OPENCODE_DISABLE_CLAUDE_CODE": "1"}
-        if target == "opencode"
-        else {}
+    expected_environment = _expected_installed_environment(
+        foundation_script.parent,
+        target,
+        home,
     )
     if installed_environment != expected_environment:
-        raise RuntimeError("Installed environment contract differs")
+        raise RuntimeError(
+            "Installed environment contract differs: "
+            f"expected {sorted(expected_environment.items())}, "
+            f"observed {sorted(installed_environment.items())}"
+        )
     rollback = _run_foundation(
         executable=executable,
         foundation_script=foundation_script,
