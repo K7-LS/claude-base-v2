@@ -4,6 +4,8 @@ import importlib.util
 import json
 from pathlib import Path
 
+import pytest
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -168,9 +170,34 @@ def test_engine_0_5_12_expects_persisted_officecli_environment(tmp_path):
 def test_unknown_engine_has_no_environment_contract(tmp_path):
     runner = _load_runner()
     engine = _engine(tmp_path / "engine", "0.5.99")
-    try:
+    with pytest.raises(RuntimeError, match="0.5.99"):
         runner._expected_installed_environment(engine, "claude", tmp_path)
-    except RuntimeError as error:
-        assert "0.5.99" in str(error)
-    else:
-        raise AssertionError("unknown engine version must be rejected")
+
+
+def test_engine_0_5_12_keeps_opencode_variable(tmp_path):
+    runner = _load_runner()
+    engine = _engine(tmp_path / "engine", "0.5.12")
+    home = tmp_path / "home"
+    assert runner._expected_installed_environment(engine, "opencode", home) == {
+        "OPENCODE_DISABLE_CLAUDE_CODE": "1",
+        "OFFICECLI_NO_AUTO_INSTALL": "1",
+        "OFFICECLI_SKIP_UPDATE": "1",
+        "PATH": str(home / ".llm-foundation" / "bin"),
+    }
+
+
+@pytest.mark.parametrize(
+    "lock",
+    [
+        {"schema_version": 1, "tools": []},
+        {"schema_version": 1, "tools": [{"id": "officecli"}, {"id": "other"}]},
+        {"schema_version": 1, "tools": [{"id": "other", "environment": {"A": "1"}}]},
+        {"schema_version": 1, "tools": [{"id": "officecli", "environment": {}}]},
+    ],
+)
+def test_engine_0_5_12_rejects_malformed_shared_tool_lock(tmp_path, lock):
+    runner = _load_runner()
+    engine = _engine(tmp_path / "engine", "0.5.12")
+    (engine / "shared-tools.lock.json").write_text(json.dumps(lock), encoding="utf-8")
+    with pytest.raises(RuntimeError, match="Foundation shared tool"):
+        runner._expected_installed_environment(engine, "claude", tmp_path)

@@ -321,11 +321,12 @@ def _expected_installed_environment(
 ) -> dict[str, str]:
     """Пользовательское окружение, которое движок оставляет после install.
 
-    Контракт зависит от версии движка. 0.5.10 держал среду общего OfficeCLI
-    только в процессе. 0.5.12 закрепляет её и каталог
-    `.llm-foundation/bin` в окружении пользователя (в режиме приёмки — в
-    тестовом хранилище) и снимает при rollback. Неизвестная версия не
-    принимается: её поведение не описано.
+    Контракт зависит от версии движка. 0.5.10 пишет среду общего OfficeCLI
+    и `PATH` прямо в реальное окружение пользователя даже в режиме
+    приёмки, минуя тестовое хранилище, поэтому хранилище остаётся пустым.
+    0.5.12 проводит эти значения и каталог `.llm-foundation/bin` через
+    хранилище окружения (в режиме приёмки — тестовое) и снимает их при
+    rollback. Неизвестная версия не принимается: её поведение не описано.
     """
     version = (foundation_root / "VERSION").read_text(encoding="utf-8").strip()
     expected = (
@@ -342,7 +343,12 @@ def _expected_installed_environment(
             )
         )
         tools = lock.get("tools")
-        if not isinstance(tools, list) or len(tools) != 1:
+        if (
+            not isinstance(tools, list)
+            or len(tools) != 1
+            or not isinstance(tools[0], dict)
+            or tools[0].get("id") != "officecli"
+        ):
             raise RuntimeError("Foundation shared tool contract differs")
         environment = tools[0].get("environment")
         if not isinstance(environment, dict) or not environment:
@@ -368,6 +374,11 @@ def _run_matrix_case(
     root: Path,
 ) -> dict[str, object]:
     home = root / Path(executable).stem
+    expected_environment = _expected_installed_environment(
+        foundation_script.parent,
+        target,
+        home,
+    )
     home.mkdir(parents=True)
     sentinels, unknown = _write_user_sentinels(home, target)
 
@@ -415,11 +426,6 @@ def _run_matrix_case(
         home=home,
     )
     installed_environment = _read_acceptance_environment(home)
-    expected_environment = _expected_installed_environment(
-        foundation_script.parent,
-        target,
-        home,
-    )
     if installed_environment != expected_environment:
         raise RuntimeError(
             "Installed environment contract differs: "
