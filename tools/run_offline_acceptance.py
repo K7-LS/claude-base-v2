@@ -314,6 +314,55 @@ def _read_acceptance_environment(home: Path) -> dict[str, str]:
     }
 
 
+def _expected_installed_environment(
+    foundation_root: Path,
+    target: str,
+    home: Path,
+) -> dict[str, str]:
+    """Пользовательское окружение, которое движок оставляет после install.
+
+    Контракт зависит от версии движка. 0.5.10 пишет среду общего OfficeCLI
+    и `PATH` прямо в реальное окружение пользователя даже в режиме
+    приёмки, минуя тестовое хранилище, поэтому хранилище остаётся пустым.
+    0.5.12 проводит эти значения и каталог `.llm-foundation/bin` через
+    хранилище окружения (в режиме приёмки — тестовое) и снимает их при
+    rollback. Неизвестная версия не принимается: её поведение не описано.
+    """
+    version = (foundation_root / "VERSION").read_text(encoding="utf-8").strip()
+    expected = (
+        {"OPENCODE_DISABLE_CLAUDE_CODE": "1"}
+        if target == "opencode"
+        else {}
+    )
+    if version == "0.5.10":
+        return expected
+    if version == "0.5.12":
+        lock = json.loads(
+            (foundation_root / "shared-tools.lock.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        tools = lock.get("tools")
+        if (
+            not isinstance(tools, list)
+            or len(tools) != 1
+            or not isinstance(tools[0], dict)
+            or tools[0].get("id") != "officecli"
+        ):
+            raise RuntimeError("Foundation shared tool contract differs")
+        environment = tools[0].get("environment")
+        if not isinstance(environment, dict) or not environment:
+            raise RuntimeError("Foundation shared tool environment differs")
+        expected.update(
+            {str(name): str(value) for name, value in environment.items()}
+        )
+        expected["PATH"] = str(home / ".llm-foundation" / "bin")
+        return expected
+    raise RuntimeError(
+        f"Foundation {version} has no installed environment contract"
+    )
+
+
 def _run_matrix_case(
     *,
     executable: str,
@@ -325,6 +374,11 @@ def _run_matrix_case(
     root: Path,
 ) -> dict[str, object]:
     home = root / Path(executable).stem
+    expected_environment = _expected_installed_environment(
+        foundation_script.parent,
+        target,
+        home,
+    )
     home.mkdir(parents=True)
     sentinels, unknown = _write_user_sentinels(home, target)
 
@@ -372,13 +426,12 @@ def _run_matrix_case(
         home=home,
     )
     installed_environment = _read_acceptance_environment(home)
-    expected_environment = (
-        {"OPENCODE_DISABLE_CLAUDE_CODE": "1"}
-        if target == "opencode"
-        else {}
-    )
     if installed_environment != expected_environment:
-        raise RuntimeError("Installed environment contract differs")
+        raise RuntimeError(
+            "Installed environment contract differs: "
+            f"expected {sorted(expected_environment.items())}, "
+            f"observed {sorted(installed_environment.items())}"
+        )
     rollback = _run_foundation(
         executable=executable,
         foundation_script=foundation_script,

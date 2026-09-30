@@ -312,6 +312,10 @@ def test_claude_runtime_does_not_upload_or_overwrite_client_state():
         "6f4a961ea8a1d656c41dd71cbef202cb71d13c443f86818c721167c33f8a51fd"
     )
     assert client_evidence["binary"]["signer"] == "Anthropic, PBC"
+    # README называет тот же бинарник, что и доказательство приёмки клиента
+    assert client_evidence["binary"]["sha256"] in (ROOT / "README.md").read_text(
+        encoding="utf-8"
+    )
     assert client_evidence["runtime_smoke"]["model_requests"] == 0
     assert release["environment"] == {"scope": "current-user", "set": []}
     connection = ROOT / "runtime" / "connection.ps1"
