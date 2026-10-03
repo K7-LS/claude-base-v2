@@ -24,7 +24,7 @@ EXPECTED_DISCOVERY = {
     "agents": 16,
     "skills": 0,
     "control_skills": 1,
-    "session_tools": 39,
+    "session_tools": 40,
 }
 
 

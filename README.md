@@ -6,7 +6,7 @@ migration provenance.
 ## Runtime shape
 
 - HOT: compact global `~/.claude/CLAUDE.md`.
-- WARM: discovery metadata for 16 Claude subagents, 39 capability skills, and
+- WARM: discovery metadata for 16 Claude subagents, 40 capability skills, and
   one explicit `sync-base` control skill.
 - COLD: full skill instructions, scripts, templates, references, 3 named
   chains, and 3 command files loaded only when selected.
@@ -24,8 +24,8 @@ pinned Foundation engine before `plan/install/doctor`; failed doctor triggers
 rollback. Feedback, telemetry, session uploads, credentials, and local changes
 never flow back to the hub.
 
-Static startup/discovery estimation is 4,771 tokens versus the 24,026-token
-legacy baseline, an 80.14% reduction. The 1,714-byte HOT layer follows the
+Static startup/discovery estimation is 4,930 tokens versus the 24,026-token
+legacy baseline, a 79.48% reduction. The 4,359-byte HOT layer follows the
 progressive context design in
 [`docs/plans/2026-07-28-claude-5-context-design.md`](docs/plans/2026-07-28-claude-5-context-design.md).
 These are not provider-billing results; matched A/B has not run.

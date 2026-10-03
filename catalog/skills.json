@@ -11,6 +11,7 @@
   {"id":"facts-layer","name":"facts-layer","description":"Use when проекту нужен проверяемый единый слой фактов.","source":"skills/facts-layer/SKILL.md","required_capabilities":["core.files.read","core.files.write"]},
   {"id":"graphify","name":"graphify","description":"Use when нужно понять структуру и связи большой базы.","source":"skills/graphify/SKILL.md","required_capabilities":["core.files.read","core.shell.execute"]},
   {"id":"handoff-to-new-chat","name":"handoff-to-new-chat","description":"Use when работу нужно передать в новую чистую задачу Codex.","source":"skills/handoff-to-new-chat/SKILL.md","required_capabilities":["core.files.read","core.files.write"]},
+  {"id":"heads-up","name":"heads-up","description":"Use when пользователь может пропустить риск, допущение или решение в итоге работы.","source":"skills/heads-up/SKILL.md","required_capabilities":[]},
   {"id":"id-tom-priemka","name":"id-tom-priemka","description":"Use when PDF-том ИД нужно постранично принять перед сдачей.","source":"skills/id-tom-priemka/SKILL.md","required_capabilities":["pdf.read","pdf.render"]},
   {"id":"image-text-replace","name":"image-text-replace","description":"Use when в скане или изображении нужно заменить текст.","source":"skills/image-text-replace/SKILL.md","required_capabilities":["image.read","image.write"]},
   {"id":"karpathy-guidelines","name":"karpathy-guidelines","description":"Use when существенная реализация рискует стать избыточной.","source":"skills/karpathy-guidelines/SKILL.md","required_capabilities":["core.files.read"]},

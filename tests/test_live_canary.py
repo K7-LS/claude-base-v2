@@ -45,7 +45,7 @@ def test_live_canary_evidence_binds_candidate_client_and_rollback():
             "agents": 16,
             "skills": 0,
             "control_skills": 1,
-            "session_tools": 39,
+            "session_tools": 40,
         },
     )
 
@@ -82,7 +82,7 @@ def test_live_canary_evidence_rejects_failed_preservation():
             component_counts={
                 "agents": 16,
                 "skills": 0,
-                "session_tools": 39,
+                "session_tools": 40,
                 "control_skills": 1,
             },
         )
