@@ -190,7 +190,7 @@ def test_native_release_is_deterministic_complete_and_one_way(tmp_path: Path):
                 if name.startswith("session-tools-baseline/tools/")
                 and name.endswith("/SKILL.md")
             ]
-        ) == 39
+        ) == 40
         assert len(
             [
                 name

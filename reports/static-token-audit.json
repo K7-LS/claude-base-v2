@@ -1,7 +1,7 @@
 {
   "candidate": {
     "cold_payload_in_startup": false,
-    "estimated_tokens": 4771,
+    "estimated_tokens": 4930,
     "surfaces": {
       "agents_discovery": {
         "bytes": 3177,
@@ -10,20 +10,20 @@
         "sha256": "e71ce09d20eef3d4340a3e11dee0c9b9316539a3ec6b748b6c3c7b96baefd509"
       },
       "hot": {
-        "bytes": 4073,
+        "bytes": 4359,
         "logical_path": "~/.claude/CLAUDE.md",
-        "sha256": "378151ed01e6068b9ed107c91f28c945619a6bc476158eb6728d470542c877b7"
+        "sha256": "31313b2d0f75b0d6eb1b321b0a181fdbf12965f006c094fe4a6788c0fe17d693"
       },
       "skills_discovery": {
-        "bytes": 7063,
-        "capability_skills": 39,
+        "bytes": 7252,
+        "capability_skills": 40,
         "control_skills": 1,
-        "count": 40,
+        "count": 41,
         "logical_root": "~/.claude/skills",
-        "sha256": "a1b344fdad49a61e31921f50b67b29e311f3ac81674812f8d6e57f6f37093cd8"
+        "sha256": "f96917a74f141cae1cf8c050516b951ba0a45e1739626c8e4baf442fb872ea20"
       }
     },
-    "total_bytes": 14313
+    "total_bytes": 14788
   },
   "legacy": {
     "captured_at": "2026-07-26",
@@ -60,7 +60,7 @@
   "results": {
     "MATCHED_AB": "NOT_RUN",
     "STATIC_TOKEN_ACCEPTANCE": "PASS",
-    "base_controlled_startup_reduction": 0.801420702859442
+    "base_controlled_startup_reduction": 0.7948305284626164
   },
   "schema_version": 1,
   "target": "claude",

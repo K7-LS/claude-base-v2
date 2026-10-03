@@ -163,7 +163,7 @@ def test_claude_has_exact_native_agent_and_skill_catalogs():
         for path in (ROOT / "skills").glob("*/SKILL.md")
     }
     assert agents == EXPECTED_AGENTS
-    assert len(skills) == 39
+    assert len(skills) == 40
 
     for path in sorted((ROOT / "agents").glob("*.md")):
         frontmatter = _frontmatter(path)
@@ -184,6 +184,39 @@ def test_claude_has_exact_native_agent_and_skill_catalogs():
         (ROOT / "catalog" / "agents.json").read_text(encoding="utf-8")
     )
     assert all((ROOT / row["source"]).is_file() for row in catalog)
+
+
+def test_heads_up_is_the_post_work_counterpart_of_domain_grilling():
+    # Средняя ступень между допросом вводных (до работы) и ревьюером (перед
+    # выдачей). Блок «Важно знать» включает правило HOT-слоя: контракт базы
+    # не ставит plugins и хуки ответа.
+    hot = (ROOT / "CLAUDE.md").read_text(encoding="utf-8")
+    assert "`heads-up`" in hot
+    assert "«Важно знать»" in hot
+
+    skill_path = ROOT / "skills" / "heads-up" / "SKILL.md"
+    frontmatter = _frontmatter(skill_path)
+    description = _scalar(frontmatter, "description")
+    assert _scalar(frontmatter, "name") == "heads-up"
+    assert description.startswith("Use when ")
+    skill = skill_path.read_text(encoding="utf-8")
+    assert "**Важно знать**" in skill
+    assert "`domain-grilling`" in skill
+    assert "`auditor`" in skill
+    assert len(skill.split()) <= 500
+
+    grilling = (
+        ROOT / "skills" / "domain-grilling" / "SKILL.md"
+    ).read_text(encoding="utf-8")
+    assert "`heads-up`" in grilling
+
+    catalog = json.loads(
+        (ROOT / "catalog" / "skills.json").read_text(encoding="utf-8")
+    )
+    record = next(row for row in catalog if row["id"] == "heads-up")
+    assert record["name"] == "heads-up"
+    assert record["description"] == description
+    assert record["source"] == "skills/heads-up/SKILL.md"
 
 
 def test_claude_imports_the_approved_russian_writing_skill_verbatim():
@@ -395,8 +428,8 @@ def test_claude_static_token_budget_passes_without_claiming_live_ab():
     assert report["candidate"]["cold_payload_in_startup"] is False
     assert report["candidate"]["surfaces"]["agents_discovery"]["count"] == 16
     skills_discovery = report["candidate"]["surfaces"]["skills_discovery"]
-    assert skills_discovery["capability_skills"] == 39
-    assert skills_discovery["count"] == 40
+    assert skills_discovery["capability_skills"] == 40
+    assert skills_discovery["count"] == 41
 
     stored = json.loads(
         (ROOT / "reports" / "static-token-audit.json").read_text(
@@ -406,7 +439,7 @@ def test_claude_static_token_budget_passes_without_claiming_live_ab():
     assert stored == report
 
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
-    assert "39 capability skills" in readme
+    assert "40 capability skills" in readme
     assert f"{int(report['candidate']['estimated_tokens']):,} tokens" in readme
 
 
