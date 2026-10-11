@@ -528,6 +528,7 @@ def test_reconcile_never_rewrites_settings_it_cannot_read(executable, tmp_path):
         "too-large": large,
         "array": b'{ "hooks": [] }',
     }
+    reasons: dict[str, str] = {}
     for name, payload in cases.items():
         home = tmp_path / name
         path = _write_settings(home, payload)
@@ -542,6 +543,26 @@ def test_reconcile_never_rewrites_settings_it_cannot_read(executable, tmp_path):
         assert [value for value in ids if value in SETTINGS_FINDINGS] == [
             expected
         ], name
+        reasons[name] = report["hooks"]["reason"]
+    assert reasons["cp1251"] == "settings.json is not valid UTF-8"
+    assert reasons["raw-tab"] == "settings.json is not valid JSON"
+    assert reasons["too-deep"] == "settings.json is nested too deeply to reconcile"
+    assert reasons["too-large"] == "settings.json is too large to reconcile"
+
+
+@pytest.mark.parametrize("executable", POWERSHELLS)
+def test_reconcile_does_not_grow_settings_past_its_own_limit(executable, tmp_path):
+    home = tmp_path / "home"
+    frame = b'{"pad": "", "hooks": {}}'
+    payload = b'{"pad": "' + b"x" * (524288 - len(frame)) + b'", "hooks": {}}'
+    assert len(payload) == 524288
+    path = _write_settings(home, payload)
+    for _ in range(2):
+        report = _hygiene(executable, home, "-Action", "Reconcile")["hooks"]
+        assert report["status"] == "BLOCKED"
+        assert report["reason"] == "settings.json would grow too large to reconcile"
+    assert path.read_bytes() == payload
+    assert not (home / ".claude" / "base").exists()
 
 
 @pytest.mark.parametrize("executable", POWERSHELLS)
@@ -602,7 +623,7 @@ def _previous_sync_script(home: Path, seconds: int) -> Path:
     scripts = home / ".claude" / "scripts"
     scripts.mkdir(parents=True, exist_ok=True)
     shared = home / ".claude" / "settings.shared.json"
-    shared.write_text(_previous_settings_text(), encoding="utf-8")
+    shared.write_bytes(_previous_settings_text().encode("utf-8"))
     script = scripts / "auto-pull.ps1"
     script.write_text(
         f"Start-Sleep -Seconds {seconds}\n"
@@ -616,14 +637,21 @@ def _previous_sync_script(home: Path, seconds: int) -> Path:
     return script
 
 
+def _start_previous_sync(script: Path) -> subprocess.Popen:
+    return subprocess.Popen(
+        ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script)]
+    )
+
+
 @pytest.mark.parametrize("executable", POWERSHELLS)
 def test_reconcile_waits_for_the_previous_base_sync_to_finish(executable, tmp_path):
     home = tmp_path / "home"
     path = _write_settings(home, _previous_settings_text())
     script = _previous_sync_script(home, 4)
-    sync = subprocess.Popen(
-        ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script)]
-    )
+    template = _template_hooks()["SessionStart"]
+
+    # Хук синхронизации записан в настройках.
+    sync = _start_previous_sync(script)
     try:
         report = _hygiene(
             executable, home, "-Action", "Reconcile", "-WaitPreviousSyncSeconds", "40"
@@ -635,8 +663,22 @@ def test_reconcile_waits_for_the_previous_base_sync_to_finish(executable, tmp_pa
     assert (home / "merged.txt").is_file()
     assert report["status"] == "UPDATED"
     assert "scripts/auto-pull.ps1" in report["removed"]
-    hooks = json.loads(path.read_text(encoding="utf-8"))["hooks"]
-    assert hooks["SessionStart"][:2] == _template_hooks()["SessionStart"]
+    assert json.loads(path.read_text(encoding="utf-8"))["hooks"]["SessionStart"][:2] == template
+    assert "auto-pull" not in path.read_text(encoding="utf-8")
+
+    # Хука в настройках уже нет, но синхронизация запущена из старого
+    # снимка клиента: сверка ждёт её по живому процессу.
+    (home / "merged.txt").unlink()
+    sync = _start_previous_sync(script)
+    try:
+        report = _hygiene(
+            executable, home, "-Action", "Reconcile", "-WaitPreviousSyncSeconds", "40"
+        )["hooks"]
+        assert sync.wait(timeout=30) == 0
+    finally:
+        sync.kill()
+    assert (home / "merged.txt").is_file()
+    assert report["status"] == "UPDATED"
     assert "auto-pull" not in path.read_text(encoding="utf-8")
     assert _hygiene(executable, home, "-Action", "Reconcile")["hooks"]["status"] == (
         "CANONICAL"
@@ -651,9 +693,7 @@ def test_reconcile_defers_while_the_previous_base_sync_is_running(
     original = _previous_settings_text().encode("utf-8")
     path = _write_settings(home, original)
     script = _previous_sync_script(home, 120)
-    sync = subprocess.Popen(
-        ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script)]
-    )
+    sync = _start_previous_sync(script)
     try:
         report = _hygiene(
             executable, home, "-Action", "All", "-WaitPreviousSyncSeconds", "2"
@@ -674,6 +714,17 @@ def test_reconcile_defers_while_the_previous_base_sync_is_running(
     assert [finding["detail"] for finding in deferred] == [
         "the previous base sync is still running"
     ]
+
+    # Синхронизация чужого профиля сверку не задерживает.
+    other = _start_previous_sync(_previous_sync_script(tmp_path / "other", 120))
+    try:
+        report = _hygiene(
+            executable, home, "-Action", "Reconcile", "-WaitPreviousSyncSeconds", "2"
+        )["hooks"]
+    finally:
+        other.kill()
+        other.wait(timeout=30)
+    assert report["status"] == "UPDATED"
 
 
 @pytest.mark.parametrize("executable", POWERSHELLS)
@@ -817,9 +868,19 @@ def test_session_start_survives_a_broken_hygiene_layer(executable, tmp_path):
     path = _write_settings(home, original)
     installed = runtime / "hooks" / "check-release.ps1"
 
+    # Нечитаемые настройки: файл не трогается, совет — починить его.
+    path.write_bytes(b'{ "hooks": [')
+    message = json.loads(_run_hook(executable, installed, home))["systemMessage"]
+    assert "did not align hooks in settings.json" in message
+    assert "settings.json is not valid JSON" in message
+    assert "Fix the file" in message
+    assert path.read_bytes() == b'{ "hooks": ['
+    _write_settings(home, original)
+
     (runtime / "hooks-policy.json").write_text("{ broken", encoding="utf-8")
     message = json.loads(_run_hook(executable, installed, home))["systemMessage"]
     assert "did not align hooks in settings.json" in message
+    assert "Run $sync-base to retry" in message
     assert "Leftovers of the previous base" not in message
     assert path.read_text(encoding="utf-8") == original
 

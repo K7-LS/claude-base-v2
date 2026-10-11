@@ -89,7 +89,7 @@ function Get-HygieneOutcome {
         )) { return $Outcome }
 
     $Report = (
-        @(& $Hygiene -Action All -WaitPreviousSyncSeconds $WaitSeconds 2>$null) -join "`n"
+        @(& $Hygiene -Action All -SessionStart -WaitPreviousSyncSeconds $WaitSeconds 2>$null) -join "`n"
     ) | ConvertFrom-Json
     $Messages = @()
     if ($Report.hooks -and [string]$Report.hooks.status -ceq 'UPDATED') {
@@ -128,9 +128,14 @@ function Get-HygieneOutcome {
         $Blocked = @($Findings | Where-Object { [string]$_.id -in $Own })
         $Leftovers = @($Findings | Where-Object { [string]$_.id -notin $Own })
         if ($Blocked.Count -gt 0) {
+            # Нечитаемый файл повторный запуск не исправит: его чинит человек.
+            $Advice = 'Run $sync-base to retry.'
+            if ([string]$Blocked[0].id -ceq 'settings_unreadable') {
+                $Advice = 'Fix the file; hooks are aligned at the next session start.'
+            }
             $Messages += (
                 'Claude-base did not align hooks in settings.json: ' +
-                [string]$Blocked[0].detail + '. Run $sync-base to retry.'
+                [string]$Blocked[0].detail + '. ' + $Advice
             )
         }
         if ($Leftovers.Count -gt 0) {
@@ -166,8 +171,8 @@ try {
 $Hygiene = $null
 try {
     # Сверка идёт последней и ждёт синхронизацию прежней базы не дольше,
-    # чем осталось от времени хука.
-    $Wait = [Math]::Max(1, [Math]::Min(10, 30 - [int]$Clock.Elapsed.TotalSeconds))
+    # чем осталось от 40 секунд хука.
+    $Wait = [Math]::Max(1, [Math]::Min(20, 32 - [int]$Clock.Elapsed.TotalSeconds))
     $Hygiene = Get-HygieneOutcome -WaitSeconds $Wait
     foreach ($HygieneMessage in @($Hygiene.Messages)) {
         [void]$Messages.Add([string]$HygieneMessage)

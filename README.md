@@ -39,7 +39,8 @@ enforces a policy still wins).
   their values; inside `hooks` the layout is normalized and base groups come
   first. The replaced file is kept in `base/state/settings-backups/` (the
   first copy and the nine latest). A file that is not strict UTF-8 and JSON,
-  is larger than 512 KB, or changes while it is being replaced is left as is.
+  is larger than 512 KB or nested deeper than 64 levels, cannot be replaced,
+  or changes while it is being replaced is left as is.
 - **Scan** is read-only. It reports what can still pull in the previous base:
   an `AGENTS.md` next to `CLAUDE.md`, hooks pointing to missing scripts or to
   the old script locations, the old git checkout, `scripts/`,
@@ -47,9 +48,14 @@ enforces a policy still wins).
   reference layer. Removing them is the owner's decision.
 
 The previous base re-applied its hooks from `settings.shared.json` at the end
-of its own `SessionStart` sync. At session start the reconcile therefore
-waits for that sync to finish (up to 10 seconds) and removes its hook; if the
-sync is still running, nothing is changed and `$sync-base` finishes the job.
+of its own `SessionStart` sync. While the sync scripts of the previous base
+are present, the reconcile therefore waits for a running sync of this profile
+to finish (up to 20 seconds within the hook timeout) and then removes its
+hook; if the sync is still running, nothing is changed and the next session
+start or `$sync-base` finishes the job.
+
+Hooks run in a nested Windows PowerShell 5.1 process whatever shell the client
+starts. Replacing `settings.json` breaks a hard link to it, if one exists.
 
 ## Delivery and token discipline
 

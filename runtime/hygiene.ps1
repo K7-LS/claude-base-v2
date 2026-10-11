@@ -4,6 +4,7 @@ param(
     [string]$HomePath = $env:USERPROFILE,
     [string]$RuntimeRoot = '',
     [ValidateRange(0, 60)][int]$WaitPreviousSyncSeconds = 0,
+    [switch]$SessionStart,
     [switch]$Check
 )
 
@@ -342,9 +343,12 @@ function New-HookContext {
         foreach ($Item in (Get-PolicyPaths $Document $Field)) { $Previous.Add($Item) }
     }
     $Literal = [regex]::Escape($HomePath.TrimEnd('\', '/')).Replace('\\', '[\\/]+')
-    $HomePattern = '(?:\$HOME|\$env:USERPROFILE|\$\{env:USERPROFILE\}|%USERPROFILE%|~|' + $Literal + ')'
+    # Тильда — только отдельным началом пути, а не хвостом чужого имени.
+    $HomePattern = '(?:\$HOME|\$env:USERPROFILE|\$\{env:USERPROFILE\}|%USERPROFILE%|(?<![^\s"''])~|' +
+        $Literal + ')'
     $Quoted = '(?:"(?<path>[^"]+)"|''(?<path>[^'']+)'')'
     return [pscustomobject]@{
+        HomePattern = $HomePattern
         Previous = $Previous
         PreviousSync = (Get-PolicyPaths $Document 'previous_sync')
         LegacyRoots = (Get-PolicyPaths $Document 'legacy_roots')
@@ -563,6 +567,9 @@ function Read-SettingsState {
     try { $State.Document = Read-JsonDocument $Text }
     catch {
         $State.Reason = 'settings.json is not valid JSON'
+        if ([string]$_.Exception.Message -ceq 'JSON is nested too deeply.') {
+            $State.Reason = 'settings.json is nested too deeply to reconcile'
+        }
         $State.Unreadable = $true
         return $State
     }
@@ -628,23 +635,28 @@ function New-ReconcileResult {
 }
 
 # Синхронизация прежней базы в конце своего хука заново вливает хуки из общего
-# шаблона. Пока она идёт на том же старте сессии, сверка была бы тут же
-# отменена, поэтому её завершения ждут.
+# шаблона. Пока она идёт, сверка была бы тут же отменена, поэтому её
+# завершения ждут. Учитываются только процессы этого профиля. Возвращает
+# finished, running или unknown (список процессов недоступен).
 function Wait-PreviousSync {
-    param([int]$Seconds, [Parameter(Mandatory = $true)]$Context)
+    param([int]$Seconds, [Parameter(Mandatory = $true)]$Context, [switch]$Settle)
 
     $Names = @($Context.PreviousSync | ForEach-Object { [regex]::Escape($_).Replace('/', '[\\/]+') })
-    $Pattern = '(?i)[\\/]\.claude[\\/]+(?:' + ($Names -join '|') + ')'
+    $Pattern = '(?i)' + $Context.HomePattern + '[\\/]+\.claude[\\/]+(?:' + ($Names -join '|') + ')'
     $Deadline = [DateTime]::UtcNow.AddSeconds($Seconds)
-    Start-Sleep -Milliseconds 1000
+    # Хук синхронизации стартует параллельно: даём ему появиться в списке.
+    if ($Settle) { Start-Sleep -Milliseconds 1000 }
     while ($true) {
-        $Running = @(
-            Get-CimInstance -ClassName Win32_Process `
-                -Filter "Name = 'powershell.exe' OR Name = 'pwsh.exe'" -ErrorAction Stop |
-                Where-Object { $_.ProcessId -ne $PID -and [string]$_.CommandLine -match $Pattern }
-        )
-        if ($Running.Count -eq 0) { return $true }
-        if ([DateTime]::UtcNow -ge $Deadline) { return $false }
+        try {
+            $Running = @(
+                Get-CimInstance -ClassName Win32_Process `
+                    -Filter "Name = 'powershell.exe' OR Name = 'pwsh.exe'" -ErrorAction Stop |
+                    Where-Object { $_.ProcessId -ne $PID -and [string]$_.CommandLine -match $Pattern }
+            )
+        }
+        catch { return 'unknown' }
+        if ($Running.Count -eq 0) { return 'finished' }
+        if ([DateTime]::UtcNow -ge $Deadline) { return 'running' }
         Start-Sleep -Milliseconds 500
     }
 }
@@ -660,8 +672,26 @@ function Test-PreviousSyncWired {
     return $false
 }
 
+# Скрипты синхронизации прежней базы лежат в профиле: её хук мог сработать из
+# снимка настроек клиента, даже если в файле его уже нет.
+function Test-PreviousSyncPresent {
+    param([string]$HomePath, [Parameter(Mandatory = $true)]$Context)
+
+    foreach ($Relative in $Context.PreviousSync) {
+        $Target = Join-Path (Join-Path $HomePath '.claude') $Relative.Replace('/', '\')
+        if (Test-Path -LiteralPath $Target -PathType Leaf) { return $true }
+    }
+    return $false
+}
+
 function Invoke-HooksReconcile {
-    param([string]$HomePath, [string]$RuntimeRoot, [int]$WaitSeconds, [switch]$Check)
+    param(
+        [string]$HomePath,
+        [string]$RuntimeRoot,
+        [int]$WaitSeconds,
+        [switch]$SessionStart,
+        [switch]$Check
+    )
 
     $Context = New-HookContext $HomePath $RuntimeRoot
     $Template = Get-TemplateHooks $RuntimeRoot $Context
@@ -669,14 +699,18 @@ function Invoke-HooksReconcile {
     $State = Read-SettingsState $Path
     if ($State.Reason) { return (New-ReconcileResult 'BLOCKED' $State.Reason) }
 
-    if (-not $Check -and $WaitSeconds -gt 0 -and (Test-PreviousSyncWired $State.Hooks $Context)) {
-        $Finished = $false
-        try { $Finished = Wait-PreviousSync $WaitSeconds $Context } catch { $Finished = $false }
-        if (-not $Finished) {
-            return (New-ReconcileResult 'DEFERRED' 'the previous base sync is still running')
+    if (-not $Check -and $WaitSeconds -gt 0) {
+        $Wired = Test-PreviousSyncWired $State.Hooks $Context
+        if ($Wired -or (Test-PreviousSyncPresent $HomePath $Context)) {
+            $Sync = Wait-PreviousSync $WaitSeconds $Context -Settle:($Wired -and $SessionStart)
+            # Без списка процессов на старте сессии с подключённым хуком
+            # синхронизации исход гонки неизвестен: файл не трогается.
+            if ($Sync -ceq 'running' -or ($Sync -ceq 'unknown' -and $Wired -and $SessionStart)) {
+                return (New-ReconcileResult 'DEFERRED' 'the previous base sync is still running')
+            }
+            $State = Read-SettingsState $Path
+            if ($State.Reason) { return (New-ReconcileResult 'BLOCKED' $State.Reason) }
         }
-        $State = Read-SettingsState $Path
-        if ($State.Reason) { return (New-ReconcileResult 'BLOCKED' $State.Reason) }
     }
 
     $Plan = Get-ReconciledHooks $State.Hooks $Template $Context
@@ -728,12 +762,18 @@ function Invoke-HooksReconcile {
     }
     $NewBytes = $script:Utf8Strict.GetBytes($NewText)
     if ($State.Bom) { $NewBytes = [byte[]](0xEF, 0xBB, 0xBF) + $NewBytes }
+    # Файл не должен перерасти собственный предел сверки.
+    if ($NewBytes.Length -gt $script:MaxSettingsBytes) {
+        return (New-ReconcileResult 'BLOCKED' 'settings.json would grow too large to reconcile' $Plan)
+    }
 
     $Backups = Join-Path $HomePath '.claude\base\state\settings-backups'
     $Stamp = [Guid]::NewGuid().ToString('N')
     $Temporary = $Path + '.hygiene-' + $Stamp + '.tmp'
     $Displaced = $Path + '.hygiene-' + $Stamp + '.old'
     $Backup = $null
+    # Вытесненный файл удаляется, только когда его содержимое сохранено.
+    $DisplacedSafe = $false
     try {
         [IO.Directory]::CreateDirectory((Split-Path -Parent $Path)) | Out-Null
         [IO.File]::WriteAllBytes($Temporary, $NewBytes)
@@ -744,21 +784,42 @@ function Invoke-HooksReconcile {
             # Без места для копии файл не заменяется.
             [IO.Directory]::CreateDirectory($Backups) | Out-Null
             try { [IO.File]::Replace($Temporary, $Path, $Displaced) }
-            catch { return (New-ReconcileResult 'BLOCKED' 'settings.json could not be replaced' $Plan) }
+            catch {
+                # Замена оборвалась на полпути: прежний файл возвращается на место.
+                if (-not (Test-Path -LiteralPath $Path -PathType Leaf) -and
+                    (Test-Path -LiteralPath $Displaced -PathType Leaf)) {
+                    [IO.File]::Move($Displaced, $Path)
+                }
+                return (New-ReconcileResult 'BLOCKED' 'settings.json could not be replaced' $Plan)
+            }
             # Заменённый файл и есть копия. Если клиент успел переписать
             # настройки после чтения, возвращается его версия.
-            if (-not (Test-SameBytes ([IO.File]::ReadAllBytes($Displaced)) $State.Bytes)) {
-                [IO.File]::Replace($Displaced, $Path, [NullString]::Value)
-                return (New-ReconcileResult 'BLOCKED' 'settings.json changed during reconcile' $Plan)
+            $Latest = [IO.File]::ReadAllBytes($Displaced)
+            if (-not (Test-SameBytes $Latest $State.Bytes)) {
+                try {
+                    [IO.File]::Replace($Displaced, $Path, [NullString]::Value)
+                    $DisplacedSafe = $true
+                    return (New-ReconcileResult 'BLOCKED' 'settings.json changed during reconcile' $Plan)
+                }
+                catch {
+                    # Вернуть не удалось: версия клиента уходит в копии.
+                    $Backup = Save-SettingsBackup $Backups $Displaced $Latest
+                    $DisplacedSafe = $true
+                    return (New-ReconcileResult 'BLOCKED' `
+                        'settings.json changed during reconcile; its latest version is in settings-backups' `
+                        $Plan $Backup)
+                }
             }
             $Backup = Save-SettingsBackup $Backups $Displaced $State.Bytes
+            $DisplacedSafe = $true
         }
     }
     finally {
-        foreach ($Leftover in @($Temporary, $Displaced)) {
-            if (Test-Path -LiteralPath $Leftover -PathType Leaf) {
-                Remove-Item -LiteralPath $Leftover -Force -ErrorAction SilentlyContinue
-            }
+        if (Test-Path -LiteralPath $Temporary -PathType Leaf) {
+            Remove-Item -LiteralPath $Temporary -Force -ErrorAction SilentlyContinue
+        }
+        if ($DisplacedSafe -and (Test-Path -LiteralPath $Displaced -PathType Leaf)) {
+            Remove-Item -LiteralPath $Displaced -Force -ErrorAction SilentlyContinue
         }
     }
     return (New-ReconcileResult 'UPDATED' $null $Plan $Backup)
@@ -862,7 +923,7 @@ try {
     if ($Action -in @('All', 'Reconcile')) {
         try {
             $Report.hooks = Invoke-HooksReconcile -HomePath $HomePath -RuntimeRoot $RuntimeRoot `
-                -WaitSeconds $WaitPreviousSyncSeconds -Check:$Check
+                -WaitSeconds $WaitPreviousSyncSeconds -SessionStart:$SessionStart -Check:$Check
         }
         catch { $Report.hooks = New-ReconcileResult 'BLOCKED' ([string]$_.Exception.Message) }
     }

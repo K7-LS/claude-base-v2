@@ -735,6 +735,8 @@ function Invoke-LlmBaseHygiene {
             $hygiene,
             '-Action',
             'All',
+            '-WaitPreviousSyncSeconds',
+            '20',
             '-HomePath',
             [IO.Path]::GetFullPath($TargetHome)
         ) 2>$null
