@@ -16,6 +16,28 @@ The base uses native Claude Code locations: `settings.json`, `agents/*.md`,
 depend on a shared runtime repository. Model and effort are not fixed by the
 base. Simple conversation invokes no tools, subagents, or reviewers.
 
+## Hooks and leftovers of the previous base
+
+The Foundation engine does not manage `settings.json`, so the base delivers its
+hooks itself. The scripts live in `runtime/hooks/` and are declared in
+`runtime/settings.json`: release check, project-memory journal, graph skeleton
+and volume widgets on `SessionStart`; the grilling, routing and
+understanding-map detectors on `UserPromptSubmit`; the screenshot reminder on
+`PreToolUse`.
+
+`runtime/hygiene.ps1` runs from the `SessionStart` hook and after `$sync-base`:
+
+- **Reconcile** replaces base-owned entries in `~/.claude/settings.json` with
+  the release set. Only the value of `hooks` is rewritten; every other byte of
+  the file is kept, a copy goes to `base/state/settings-backups/`, and hooks
+  the base does not own stay untouched. `runtime/hooks-policy.json` lists the
+  previous-base scripts that are replaced or retired.
+- **Scan** is read-only. It reports what can still pull in the previous base:
+  an `AGENTS.md` next to `CLAUDE.md`, hooks pointing to missing scripts or to
+  the old script locations, the old git checkout, `scripts/`,
+  `settings.shared.json`, and `memory/` files that differ from the release
+  reference layer. Removing them is the owner's decision.
+
 ## Delivery and token discipline
 
 Updates are one-way from immutable hub releases to consumers. `$sync-base`

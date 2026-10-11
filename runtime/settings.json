@@ -8,8 +8,93 @@
         "hooks": [
           {
             "type": "command",
-            "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"$env:USERPROFILE\\.claude\\base\\runtime\\hooks\\check-release.ps1\"",
+            "command": "& \"$HOME\\.claude\\base\\runtime\\hooks\\check-release.ps1\"",
+            "shell": "powershell",
             "timeout": 40
+          },
+          {
+            "type": "command",
+            "command": "& \"$HOME\\.claude\\base\\runtime\\hooks\\graph-staleness-check.ps1\"",
+            "shell": "powershell",
+            "timeout": 15
+          },
+          {
+            "type": "command",
+            "command": "& \"$HOME\\.claude\\base\\runtime\\hooks\\project-memory-session-start.ps1\"",
+            "shell": "powershell",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "& \"$HOME\\.claude\\base\\runtime\\hooks\\regen-tom-widgets.ps1\"",
+            "shell": "powershell",
+            "timeout": 30
+          }
+        ]
+      },
+      {
+        "matcher": "resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "& \"$HOME\\.claude\\base\\runtime\\hooks\\check-release.ps1\"",
+            "shell": "powershell",
+            "timeout": 40
+          },
+          {
+            "type": "command",
+            "command": "& \"$HOME\\.claude\\base\\runtime\\hooks\\graph-staleness-check.ps1\"",
+            "shell": "powershell",
+            "timeout": 15
+          },
+          {
+            "type": "command",
+            "command": "& \"$HOME\\.claude\\base\\runtime\\hooks\\project-memory-session-start.ps1\"",
+            "shell": "powershell",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "& \"$HOME\\.claude\\base\\runtime\\hooks\\regen-tom-widgets.ps1\"",
+            "shell": "powershell",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "& \"$HOME\\.claude\\base\\runtime\\hooks\\grilling-detector.ps1\"",
+            "shell": "powershell",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "& \"$HOME\\.claude\\base\\runtime\\hooks\\routing-detector.ps1\"",
+            "shell": "powershell",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "& \"$HOME\\.claude\\base\\runtime\\hooks\\understanding-map-detector.ps1\"",
+            "shell": "powershell",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "screenshot|zoom",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "& \"$HOME\\.claude\\base\\runtime\\hooks\\screenshot-source-zoom.ps1\"",
+            "shell": "powershell",
+            "timeout": 10
           }
         ]
       }

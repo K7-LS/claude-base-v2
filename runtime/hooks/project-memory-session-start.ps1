@@ -1,0 +1,83 @@
+# project-memory-session-start.ps1 - project-memory SessionStart hook
+# If cwd (or a parent, up to 12 levels) is a memory project (has Claude\<journal>):
+#   1) prints the top 2 journal entries into session context ("read journal first"),
+#   2) writes a small cwd-project cache for the session.
+# Outside memory projects: silent no-op.
+# NEVER breaks a session (exit 0 always).
+# ASCII-only source on purpose (PowerShell 5.1 / no-BOM robustness).
+# Journal file name is Russian ("ZHURNAL SESSIY.md"), assembled from codepoints.
+
+$ErrorActionPreference = 'SilentlyContinue'
+try { [Console]::OutputEncoding = [Text.Encoding]::UTF8 } catch {}
+try { [Console]::InputEncoding  = [Text.Encoding]::UTF8 } catch {}
+
+$JournalName = (-join ([char]0x0416,[char]0x0423,[char]0x0420,[char]0x041D,[char]0x0410,[char]0x041B)) + ' ' + `
+               (-join ([char]0x0421,[char]0x0415,[char]0x0421,[char]0x0421,[char]0x0418,[char]0x0419)) + '.md'
+
+try {
+  $raw = [Console]::In.ReadToEnd()
+  $inp = $null
+  if ($raw) { $inp = $raw | ConvertFrom-Json }
+  $cwd = ''
+  if ($inp -and $inp.cwd) { $cwd = [string]$inp.cwd } else { $cwd = (Get-Location).Path }
+  $sid = ''
+  if ($inp -and $inp.session_id) { $sid = [string]$inp.session_id }
+
+  $stateDir = $env:PROJECT_MEMORY_STATE_DIR
+  if (-not $stateDir) { $stateDir = Join-Path $env:USERPROFILE '.claude\.local-state\project-memory' }
+  New-Item -ItemType Directory -Force -Path $stateDir | Out-Null
+
+  # Housekeeping: drop stale cwd-project cache entries after 7 days.
+  Get-ChildItem -LiteralPath $stateDir -Filter 'session_*.json' -EA SilentlyContinue |
+    Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-7) } |
+    Remove-Item -Force -EA SilentlyContinue
+
+  # walk up from cwd looking for <root>\Claude\<journal>
+  $root = $null; $journal = $null
+  $d = $null
+  if (Test-Path -LiteralPath $cwd) { $d = Get-Item -LiteralPath $cwd }
+  for ($i = 0; ($i -lt 12) -and $d; $i++) {
+    $cand = Join-Path (Join-Path $d.FullName 'Claude') $JournalName
+    if (Test-Path -LiteralPath $cand) { $root = $d.FullName; $journal = $cand; break }
+    if ($d.Name -eq 'Claude') {
+      $cand2 = Join-Path $d.FullName $JournalName
+      if (Test-Path -LiteralPath $cand2) { $root = $d.Parent.FullName; $journal = $cand2; break }
+    }
+    $d = $d.Parent
+  }
+
+  if (-not $journal) { exit 0 }   # not a memory project - stay silent
+
+  if ($sid) {
+    $marker = Join-Path $stateDir ("session_" + $sid + ".json")
+    $obj = @{
+      project_root = $root
+      journal      = $journal
+    }
+    $obj | ConvertTo-Json | Set-Content -LiteralPath $marker -Encoding UTF8
+  }
+
+  # print top of the journal: up to 2 entries, capped at 60 lines
+  $lines = @(Get-Content -LiteralPath $journal -Encoding UTF8)
+  $starts = @()
+  for ($i = 0; $i -lt $lines.Count; $i++) {
+    # entries start with a dated header (## YYYY-...); a bare '## *' would also
+    # match the entry template inside the fenced code block of the header
+    if ($lines[$i] -match '^## \d{4}-') { $starts += $i }
+  }
+  $rel = $journal.Substring($root.Length).TrimStart('\','/')
+  Write-Output ("[project-memory] Memory project detected (root: " + (Split-Path $root -Leaf) + ").")
+  Write-Output ("Top of the session journal (" + $rel + "); also read Claude\STATUS.md. Update portable memory only after a material portable-state change:")
+  Write-Output ""
+  if ($starts.Count -ge 1) {
+    $end = $lines.Count - 1
+    if ($starts.Count -ge 3) { $end = $starts[2] - 1 }
+    $cap = $starts[0] + 59
+    if ($end -gt $cap) { $end = $cap }
+    $lines[$starts[0]..$end] | ForEach-Object { Write-Output $_ }
+  } else {
+    $lines | Select-Object -First 20 | ForEach-Object { Write-Output $_ }
+  }
+
+} catch {}
+exit 0

@@ -713,6 +713,76 @@ function Invoke-LlmVerifiedWorkflow {
     }
 }
 
+function Invoke-LlmBaseHygiene {
+    # Хуки и остатки прежней базы. Сбой сверки не отменяет установку:
+    # релиз уже проверен движком, а settings.json движок не ведёт.
+    $hygiene = Join-Path ([IO.Path]::GetFullPath($TargetHome)) (
+        ([string]$script:LlmSyncPolicy.install_root).Replace('/', '\') +
+        '\base\runtime\hygiene.ps1'
+    )
+    $powershell = Get-Command powershell.exe -ErrorAction SilentlyContinue
+    if ($null -eq $powershell -or
+        -not (Test-Path -LiteralPath $hygiene -PathType Leaf)) {
+        return
+    }
+    $report = $null
+    try {
+        $output = & $powershell.Source @(
+            '-NoProfile',
+            '-ExecutionPolicy',
+            'Bypass',
+            '-File',
+            $hygiene,
+            '-Action',
+            'All',
+            '-HomePath',
+            [IO.Path]::GetFullPath($TargetHome)
+        ) 2>$null
+        $report = ($output -join "`n") | ConvertFrom-Json -ErrorAction Stop
+    }
+    catch {
+        Write-Host 'Сверка хуков и остатков прежней базы не выполнена.'
+        return
+    }
+    if ($null -ne $report.hooks) {
+        switch -CaseSensitive ([string]$report.hooks.status) {
+            'UPDATED' {
+                Write-Host (
+                    'Хуки в settings.json приведены к набору релиза; ' +
+                    'снято записей прежней базы: ' +
+                    @($report.hooks.removed).Count + '. Копия: ' +
+                    [string]$report.hooks.backup +
+                    '. Изменение действует со следующей сессии.'
+                )
+            }
+            'CANONICAL' {
+                Write-Host 'Хуки в settings.json соответствуют релизу.'
+            }
+            default {
+                Write-Host (
+                    'Хуки в settings.json не сверены: ' +
+                    [string]$report.hooks.reason
+                )
+            }
+        }
+    }
+    if ($null -ne $report.legacy) {
+        $findings = @($report.legacy.findings)
+        if ($findings.Count -eq 0) {
+            Write-Host 'Остатков прежней базы не найдено.'
+        }
+        else {
+            Write-Host ('Остатки прежней базы (' + $findings.Count + '):')
+            foreach ($finding in $findings) {
+                Write-Host (
+                    '  - ' + [string]$finding.path + ': ' +
+                    [string]$finding.detail
+                )
+            }
+        }
+    }
+}
+
 function Invoke-LlmSyncMain {
     if ([string]$script:LlmSyncPolicy.client.acceptance -cne 'PASS') {
         throw 'Client release contract is not accepted; canary is required.'
@@ -782,6 +852,12 @@ function Invoke-LlmSyncMain {
         Invoke-LlmVerifiedWorkflow `
             -Verified $verified `
             -ClientVersion $clientVersion
+        try {
+            Invoke-LlmBaseHygiene
+        }
+        catch {
+            Write-Host 'Сверка хуков и остатков прежней базы не выполнена.'
+        }
         Write-Host (
             [string]$script:LlmSyncPolicy.target +
             '-base ' + $tag + ' installed and verified.'

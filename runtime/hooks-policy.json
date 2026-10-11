@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "legacy_roots": [
+    "scripts",
+    "skills/project-memory/tools/hooks"
+  ],
+  "superseded": [
+    "check-release-wrapper.ps1",
+    "check-release.ps1",
+    "graph-staleness-check.ps1",
+    "grilling-detector.ps1",
+    "regen-tom-widgets.ps1",
+    "routing-detector.ps1",
+    "screenshot-source-zoom.ps1",
+    "session_start.ps1",
+    "understanding-map-detector.ps1"
+  ],
+  "retired": [
+    "auto-pull.ps1",
+    "auto-push.ps1",
+    "codex-autosync.ps1",
+    "codex-drift-check.ps1",
+    "log-tool-usage.ps1",
+    "session_end.ps1"
+  ]
+}

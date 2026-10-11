@@ -69,7 +69,70 @@ function Get-DailyReleaseMessage {
     return "Claude-base $LatestText is available. Run `$sync-base to verify and install it."
 }
 
+function Get-HygieneMessages {
+    $RuntimeRoot = Split-Path -Parent $PSScriptRoot
+    $Hygiene = Join-Path $RuntimeRoot 'hygiene.ps1'
+    $BaseHome = Join-Path $env:USERPROFILE '.claude\base'
+    # Сверка идёт только из установленного слоя: запуск хука из исходников
+    # или с чужим профилем настройки не трогает.
+    if (-not (Test-Path -LiteralPath $Hygiene -PathType Leaf) -or
+        -not (Test-Path -LiteralPath (Join-Path $BaseHome 'VERSION') -PathType Leaf) -or
+        -not [string]::Equals(
+            [IO.Path]::GetFullPath($RuntimeRoot).TrimEnd('\'),
+            [IO.Path]::GetFullPath((Join-Path $BaseHome 'runtime')).TrimEnd('\'),
+            [StringComparison]::OrdinalIgnoreCase
+        )) { return @() }
+
+    $Report = (@(& $Hygiene -Action All 2>$null) -join "`n") | ConvertFrom-Json
+    $Result = @()
+    if ($Report.hooks -and [string]$Report.hooks.status -ceq 'UPDATED') {
+        $Result += 'Claude-base hooks in settings.json were aligned with the installed release; a backup was kept and they apply from the next session.'
+    }
+
+    # Об остатках прежней базы сообщаем один раз на каждый их состав.
+    $Signature = ''
+    if ($Report.legacy -and [string]$Report.legacy.status -ceq 'FOUND') {
+        $Signature = @(
+            $Report.legacy.findings |
+                ForEach-Object { [string]$_.id + ':' + [string]$_.path } |
+                Sort-Object
+        ) -join '|'
+    }
+    $StateRoot = Join-Path $BaseHome 'state'
+    $StatePath = Join-Path $StateRoot 'hygiene.json'
+    $Previous = $null
+    if (Test-Path -LiteralPath $StatePath -PathType Leaf) {
+        try {
+            $Previous = [string](
+                Get-Content -LiteralPath $StatePath -Raw -Encoding UTF8 | ConvertFrom-Json
+            ).notified
+        } catch {
+            # Следующая запись заменит повреждённый файл состояния.
+        }
+    }
+    if ($Signature -cne $Previous) {
+        [IO.Directory]::CreateDirectory($StateRoot) | Out-Null
+        $StatePayload = [ordered]@{ notified = $Signature } | ConvertTo-Json -Compress
+        Write-Utf8NoBom $StatePath ($StatePayload + "`n")
+        if ($Signature) {
+            $Ids = @(
+                $Report.legacy.findings | ForEach-Object { [string]$_.id } | Sort-Object -Unique
+            ) -join ', '
+            $Result += "Leftovers of the previous base are still present ($Ids). Ask Claude to run base\runtime\hygiene.ps1 -Action Scan for the list."
+        }
+    }
+    return $Result
+}
+
 $Messages = New-Object 'Collections.Generic.List[string]'
+try {
+    foreach ($HygieneMessage in @(Get-HygieneMessages)) {
+        [void]$Messages.Add([string]$HygieneMessage)
+    }
+} catch {
+    # Сверка хуков не блокирует запуск сессии.
+}
+
 try {
     $Updater = Join-Path (Split-Path -Parent $PSScriptRoot) 'update-session-tools.ps1'
     if (Test-Path -LiteralPath $Updater -PathType Leaf) {

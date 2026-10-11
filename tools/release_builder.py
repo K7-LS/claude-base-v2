@@ -63,6 +63,27 @@ def _json_bytes(value: object) -> bytes:
     ).encode("utf-8")
 
 
+HOOK_SCRIPT = re.compile(r"\\base\\runtime\\hooks\\([A-Za-z0-9_-]+)\.ps1\"$")
+
+
+def declared_hooks(repo_root: Path, contract: dict[str, object]) -> list[str]:
+    """Хуки релиза в виде «событие:matcher:скрипт» — из шаблона настроек."""
+    settings = _load_json(repo_root / str(contract["paths"]["config_source"]))
+    declared: list[str] = []
+    for event, groups in settings["hooks"].items():
+        for group in groups:
+            for hook in group["hooks"]:
+                script = HOOK_SCRIPT.search(str(hook["command"]))
+                if script is None:
+                    raise ValueError("settings template hook is outside base runtime")
+                declared.append(
+                    f"{event}:{group.get('matcher', '')}:{script.group(1)}"
+                )
+    if len(declared) != len(set(declared)):
+        raise ValueError("settings template repeats a hook")
+    return sorted(declared)
+
+
 def _build_desired_state(repo_root: Path, contract: dict[str, object]) -> dict[str, object]:
     agents = _load_json(repo_root / "catalog" / "agents.json")
     skills = _load_json(repo_root / "catalog" / "skills.json")
@@ -74,7 +95,7 @@ def _build_desired_state(repo_root: Path, contract: dict[str, object]) -> dict[s
         "unknown_policy": "prompt-every-run",
         "skills": sorted(str(row["id"]) for row in skills),
         "agents": sorted(str(row["id"]) for row in agents),
-        "hooks": ["SessionStart:startup:check-release"],
+        "hooks": declared_hooks(repo_root, contract),
         "managed_files": [
             str(contract["paths"]["hot_destination"]),
             str(contract["paths"]["config_destination"]),
