@@ -8,25 +8,25 @@
         "hooks": [
           {
             "type": "command",
-            "command": "& \"$HOME\\.claude\\base\\runtime\\hooks\\check-release.ps1\"",
+            "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"$HOME\\.claude\\base\\runtime\\hooks\\check-release.ps1\"",
             "shell": "powershell",
             "timeout": 40
           },
           {
             "type": "command",
-            "command": "& \"$HOME\\.claude\\base\\runtime\\hooks\\graph-staleness-check.ps1\"",
+            "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"$HOME\\.claude\\base\\runtime\\hooks\\graph-staleness-check.ps1\"",
             "shell": "powershell",
             "timeout": 15
           },
           {
             "type": "command",
-            "command": "& \"$HOME\\.claude\\base\\runtime\\hooks\\project-memory-session-start.ps1\"",
+            "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"$HOME\\.claude\\base\\runtime\\hooks\\project-memory-session-start.ps1\"",
             "shell": "powershell",
             "timeout": 10
           },
           {
             "type": "command",
-            "command": "& \"$HOME\\.claude\\base\\runtime\\hooks\\regen-tom-widgets.ps1\"",
+            "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"$HOME\\.claude\\base\\runtime\\hooks\\regen-tom-widgets.ps1\"",
             "shell": "powershell",
             "timeout": 30
           }
@@ -37,25 +37,25 @@
         "hooks": [
           {
             "type": "command",
-            "command": "& \"$HOME\\.claude\\base\\runtime\\hooks\\check-release.ps1\"",
+            "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"$HOME\\.claude\\base\\runtime\\hooks\\check-release.ps1\"",
             "shell": "powershell",
             "timeout": 40
           },
           {
             "type": "command",
-            "command": "& \"$HOME\\.claude\\base\\runtime\\hooks\\graph-staleness-check.ps1\"",
+            "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"$HOME\\.claude\\base\\runtime\\hooks\\graph-staleness-check.ps1\"",
             "shell": "powershell",
             "timeout": 15
           },
           {
             "type": "command",
-            "command": "& \"$HOME\\.claude\\base\\runtime\\hooks\\project-memory-session-start.ps1\"",
+            "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"$HOME\\.claude\\base\\runtime\\hooks\\project-memory-session-start.ps1\"",
             "shell": "powershell",
             "timeout": 10
           },
           {
             "type": "command",
-            "command": "& \"$HOME\\.claude\\base\\runtime\\hooks\\regen-tom-widgets.ps1\"",
+            "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"$HOME\\.claude\\base\\runtime\\hooks\\regen-tom-widgets.ps1\"",
             "shell": "powershell",
             "timeout": 30
           }
@@ -67,19 +67,19 @@
         "hooks": [
           {
             "type": "command",
-            "command": "& \"$HOME\\.claude\\base\\runtime\\hooks\\grilling-detector.ps1\"",
+            "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"$HOME\\.claude\\base\\runtime\\hooks\\grilling-detector.ps1\"",
             "shell": "powershell",
             "timeout": 10
           },
           {
             "type": "command",
-            "command": "& \"$HOME\\.claude\\base\\runtime\\hooks\\routing-detector.ps1\"",
+            "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"$HOME\\.claude\\base\\runtime\\hooks\\routing-detector.ps1\"",
             "shell": "powershell",
             "timeout": 10
           },
           {
             "type": "command",
-            "command": "& \"$HOME\\.claude\\base\\runtime\\hooks\\understanding-map-detector.ps1\"",
+            "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"$HOME\\.claude\\base\\runtime\\hooks\\understanding-map-detector.ps1\"",
             "shell": "powershell",
             "timeout": 10
           }
@@ -92,7 +92,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "& \"$HOME\\.claude\\base\\runtime\\hooks\\screenshot-source-zoom.ps1\"",
+            "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"$HOME\\.claude\\base\\runtime\\hooks\\screenshot-source-zoom.ps1\"",
             "shell": "powershell",
             "timeout": 10
           }

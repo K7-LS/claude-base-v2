@@ -27,7 +27,7 @@ components, adding functionality») срабатывает только на к�
 ## Слой Tools (механизм запуска)
 
 Скилл реализует 3-й слой skill-development (Tools) — детерминированный детект:
-- `~/.claude/scripts/grilling-detector.ps1` — UserPromptSubmit-хук (ASCII-логика).
+- `~/.claude/base/runtime/hooks/grilling-detector.ps1` — UserPromptSubmit-хук (ASCII-логика).
   Читает промпт, матчит против `triggers.txt`, при совпадении печатает `reminder.txt`
   в контекст (fail-open: любая ошибка → тихий `exit 0`, промпт не блокируется).
 - `triggers.txt` (рядом со SKILL.md, UTF-8) — список строй-фраз; правится без кода.

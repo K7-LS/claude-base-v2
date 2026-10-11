@@ -4,23 +4,28 @@
     "scripts",
     "skills/project-memory/tools/hooks"
   ],
+  "previous_sync": [
+    "scripts/auto-pull.ps1",
+    "scripts/merge-shared-settings.ps1"
+  ],
   "superseded": [
-    "check-release-wrapper.ps1",
-    "check-release.ps1",
-    "graph-staleness-check.ps1",
-    "grilling-detector.ps1",
-    "regen-tom-widgets.ps1",
-    "routing-detector.ps1",
-    "screenshot-source-zoom.ps1",
-    "session_start.ps1",
-    "understanding-map-detector.ps1"
+    "scripts/check-release-wrapper.ps1",
+    "scripts/graph-staleness-check.ps1",
+    "scripts/grilling-detector.ps1",
+    "scripts/project-memory-hooks/session_start.ps1",
+    "scripts/regen-tom-widgets.ps1",
+    "scripts/routing-detector.ps1",
+    "scripts/screenshot-source-zoom.ps1",
+    "scripts/understanding-map-detector.ps1",
+    "skills/project-memory/tools/hooks/session_start.ps1"
   ],
   "retired": [
-    "auto-pull.ps1",
-    "auto-push.ps1",
-    "codex-autosync.ps1",
-    "codex-drift-check.ps1",
-    "log-tool-usage.ps1",
-    "session_end.ps1"
+    "scripts/auto-pull.ps1",
+    "scripts/auto-push.ps1",
+    "scripts/codex-autosync.ps1",
+    "scripts/codex-drift-check.ps1",
+    "scripts/log-tool-usage.ps1",
+    "scripts/project-memory-hooks/session_end.ps1",
+    "skills/project-memory/tools/hooks/session_end.ps1"
   ]
 }

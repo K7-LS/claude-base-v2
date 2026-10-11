@@ -3,15 +3,17 @@ param(
     [ValidateSet('All', 'Reconcile', 'Scan')][string]$Action = 'All',
     [string]$HomePath = $env:USERPROFILE,
     [string]$RuntimeRoot = '',
+    [ValidateRange(0, 60)][int]$WaitPreviousSyncSeconds = 0,
     [switch]$Check
 )
 
 # Гигиена установленной базы:
-#   Reconcile — приводит хуки в ~/.claude/settings.json к набору релиза;
+#   Reconcile — приводит хуки базы в ~/.claude/settings.json к набору релиза;
 #   Scan      — только читает и перечисляет остатки прежней базы.
-# Меняется одно значение ключа "hooks": остальной текст settings.json
-# остаётся побайтно прежним, перед записью снимается копия. Чужие хуки
-# (не из базы) сохраняются. Скрипт не блокирует сессию: код возврата 0.
+# Меняется одно значение ключа "hooks": остальные байты settings.json
+# остаются прежними, заменённый файл уходит в копии. Чужие хуки (не из базы)
+# сохраняются. Файл, который нельзя прочитать строго как UTF-8 и JSON, не
+# трогается. Скрипт не блокирует сессию: код возврата всегда 0.
 
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
@@ -21,11 +23,16 @@ $OutputEncoding = $Utf8NoBom
 
 if ([string]::IsNullOrWhiteSpace($RuntimeRoot)) { $RuntimeRoot = $PSScriptRoot }
 
+$script:MaxSettingsBytes = 524288
+$script:MaxJsonDepth = 64
+$script:Utf8Strict = New-Object Text.UTF8Encoding($false, $true)
+# Строгая грамматика JSON: строки без управляющих символов и с известными
+# экранированиями, пробельные символы — только четыре разрешённых, цифры ASCII.
 $script:JsonTokenPattern = New-Object Text.RegularExpressions.Regex(
-    '"(?:[^"\\]|\\.)*"|[{}\[\]:,]|[^\s{}\[\]:,"]+',
-    [Text.RegularExpressions.RegexOptions]::Singleline
+    '"(?:[^"\\\u0000-\u001F]|\\(?:["\\/bfnrt]|u[0-9A-Fa-f]{4}))*"|[{}\[\]:,]|[^ \t\r\n{}\[\]:,"]+'
 )
-$script:JsonLiteralPattern = '^(?:true|false|null|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)$'
+$script:JsonLiteralPattern = '^(?:true|false|null|-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?)$'
+$script:JsonGapPattern = '[^ \t\r\n]'
 
 function New-JsonReader {
     param([Parameter(Mandatory = $true)][AllowEmptyString()][string]$Text)
@@ -34,15 +41,15 @@ function New-JsonReader {
     $Position = 0
     foreach ($Token in $Tokens) {
         if ($Token.Index -gt $Position -and
-            $Text.Substring($Position, $Token.Index - $Position).Trim().Length -ne 0) {
+            $Text.Substring($Position, $Token.Index - $Position) -match $script:JsonGapPattern) {
             throw 'JSON contains unexpected characters.'
         }
         $Position = $Token.Index + $Token.Length
     }
-    if ($Position -lt $Text.Length -and $Text.Substring($Position).Trim().Length -ne 0) {
+    if ($Position -lt $Text.Length -and $Text.Substring($Position) -match $script:JsonGapPattern) {
         throw 'JSON contains unexpected characters.'
     }
-    return [pscustomobject]@{ Text = $Text; Tokens = $Tokens; Index = 0 }
+    return [pscustomobject]@{ Text = $Text; Tokens = $Tokens; Index = 0; Depth = 0 }
 }
 
 function Read-JsonToken {
@@ -69,7 +76,6 @@ function ConvertFrom-JsonStringToken {
             continue
         }
         $Index++
-        if ($Index -ge $Body.Length) { throw 'JSON string escape is incomplete.' }
         $Escape = [string]$Body[$Index]
         if ($Escape -ceq '"' -or $Escape -ceq '\' -or $Escape -ceq '/') {
             [void]$Builder.Append($Escape)
@@ -79,14 +85,10 @@ function ConvertFrom-JsonStringToken {
         elseif ($Escape -ceq 'n') { [void]$Builder.Append([char]10) }
         elseif ($Escape -ceq 'r') { [void]$Builder.Append([char]13) }
         elseif ($Escape -ceq 't') { [void]$Builder.Append([char]9) }
-        elseif ($Escape -ceq 'u') {
-            if ($Index + 4 -gt $Body.Length - 1) { throw 'JSON unicode escape is incomplete.' }
-            $Hex = $Body.Substring($Index + 1, 4)
-            if ($Hex -notmatch '^[0-9A-Fa-f]{4}$') { throw 'JSON unicode escape is invalid.' }
-            [void]$Builder.Append([char][Convert]::ToInt32($Hex, 16))
+        else {
+            [void]$Builder.Append([char][Convert]::ToInt32($Body.Substring($Index + 1, 4), 16))
             $Index += 4
         }
-        else { throw 'JSON string escape is invalid.' }
         $Index++
     }
     return $Builder.ToString()
@@ -97,7 +99,8 @@ function ConvertTo-JsonStringToken {
 
     $Builder = New-Object Text.StringBuilder
     [void]$Builder.Append('"')
-    foreach ($Char in $Value.ToCharArray()) {
+    for ($Index = 0; $Index -lt $Value.Length; $Index++) {
+        $Char = $Value[$Index]
         $Code = [int]$Char
         if ($Code -eq 34) { [void]$Builder.Append('\"') }
         elseif ($Code -eq 92) { [void]$Builder.Append('\\') }
@@ -107,69 +110,100 @@ function ConvertTo-JsonStringToken {
         elseif ($Code -eq 8) { [void]$Builder.Append('\b') }
         elseif ($Code -eq 12) { [void]$Builder.Append('\f') }
         elseif ($Code -lt 32) { [void]$Builder.Append('\u' + $Code.ToString('x4')) }
+        elseif ([char]::IsHighSurrogate($Char) -and $Index + 1 -lt $Value.Length -and
+            [char]::IsLowSurrogate($Value[$Index + 1])) {
+            [void]$Builder.Append($Char).Append($Value[$Index + 1])
+            $Index++
+        }
+        # Одиночный суррогат в UTF-8 не записать: остаётся экранированным.
+        elseif ([char]::IsSurrogate($Char)) { [void]$Builder.Append('\u' + $Code.ToString('x4')) }
         else { [void]$Builder.Append($Char) }
     }
     [void]$Builder.Append('"')
     return $Builder.ToString()
 }
 
-# Значения: объект — OrderedDictionary, массив — ArrayList, строка — string,
-# число и true/false/null — Tuple[string] с исходным текстом токена.
+# Значения: объект — OrderedDictionary, массив — ArrayList, строка —
+# Tuple[string,string] (значение и исходный токен), число и true/false/null —
+# Tuple[string] с исходным токеном. Исходные токены уходят в файл как были.
 function Read-JsonValue {
     param([Parameter(Mandatory = $true)]$Reader)
 
     $Token = Read-JsonToken $Reader
     $Value = [string]$Token.Value
+    if ($Value -ceq '{' -or $Value -ceq '[') {
+        $Reader.Depth = $Reader.Depth + 1
+        if ($Reader.Depth -gt $script:MaxJsonDepth) { throw 'JSON is nested too deeply.' }
+    }
     if ($Value -ceq '{') {
         $Object = New-Object Collections.Specialized.OrderedDictionary
         if ([string]$Reader.Tokens[$Reader.Index].Value -ceq '}') {
             $Reader.Index = $Reader.Index + 1
-            return $Object
         }
-        while ($true) {
-            $KeyToken = [string](Read-JsonToken $Reader).Value
-            if (-not $KeyToken.StartsWith('"')) { throw 'JSON object key is not a string.' }
-            $Key = ConvertFrom-JsonStringToken $KeyToken
-            if ([string](Read-JsonToken $Reader).Value -cne ':') { throw 'JSON object lacks a colon.' }
-            $Item = Read-JsonValue $Reader
-            if ($Object.Contains($Key)) { throw 'JSON object repeats a key.' }
-            $Object.Add($Key, $Item)
-            $Next = [string](Read-JsonToken $Reader).Value
-            if ($Next -ceq '}') { break }
-            if ($Next -cne ',') { throw 'JSON object lacks a comma.' }
+        else {
+            while ($true) {
+                $KeyToken = [string](Read-JsonToken $Reader).Value
+                if (-not $KeyToken.StartsWith('"')) { throw 'JSON object key is not a string.' }
+                $Key = ConvertFrom-JsonStringToken $KeyToken
+                if ([string](Read-JsonToken $Reader).Value -cne ':') { throw 'JSON object lacks a colon.' }
+                $Item = Read-JsonValue $Reader
+                if ($Object.Contains($Key)) { throw 'JSON object repeats a key.' }
+                $Object.Add($Key, $Item)
+                $Next = [string](Read-JsonToken $Reader).Value
+                if ($Next -ceq '}') { break }
+                if ($Next -cne ',') { throw 'JSON object lacks a comma.' }
+            }
         }
+        $Reader.Depth = $Reader.Depth - 1
         return $Object
     }
     if ($Value -ceq '[') {
         $List = New-Object Collections.ArrayList
         if ([string]$Reader.Tokens[$Reader.Index].Value -ceq ']') {
             $Reader.Index = $Reader.Index + 1
-            return , $List
         }
-        while ($true) {
-            $Item = Read-JsonValue $Reader
-            [void]$List.Add($Item)
-            $Next = [string](Read-JsonToken $Reader).Value
-            if ($Next -ceq ']') { break }
-            if ($Next -cne ',') { throw 'JSON array lacks a comma.' }
+        else {
+            while ($true) {
+                $Item = Read-JsonValue $Reader
+                [void]$List.Add($Item)
+                $Next = [string](Read-JsonToken $Reader).Value
+                if ($Next -ceq ']') { break }
+                if ($Next -cne ',') { throw 'JSON array lacks a comma.' }
+            }
         }
+        $Reader.Depth = $Reader.Depth - 1
         return , $List
     }
-    if ($Value.StartsWith('"')) { return (ConvertFrom-JsonStringToken $Value) }
+    if ($Value.StartsWith('"')) {
+        return (New-Object 'Tuple[string,string]' (ConvertFrom-JsonStringToken $Value), $Value)
+    }
     if ($Value -cnotmatch $script:JsonLiteralPattern) { throw 'JSON literal is invalid.' }
     return (New-Object 'Tuple[string]' $Value)
 }
 
+function Get-JsonString {
+    param([AllowNull()]$Value)
+
+    if ($Value -is [Tuple[string, string]]) { return [string]$Value.Item1 }
+    return $null
+}
+
+# Canonical — строки заново экранируются из значений (для сравнения по смыслу);
+# без него строки пишутся исходными токенами.
 function ConvertTo-JsonText {
     param(
         [AllowNull()]$Value,
         [int]$Level = 0,
         [string]$Unit = '  ',
         [string]$NewLine = "`n",
-        [switch]$Compact
+        [switch]$Compact,
+        [switch]$Canonical
     )
 
-    if ($Value -is [string]) { return (ConvertTo-JsonStringToken $Value) }
+    if ($Value -is [Tuple[string, string]]) {
+        if ($Canonical) { return (ConvertTo-JsonStringToken ([string]$Value.Item1)) }
+        return [string]$Value.Item2
+    }
     if ($Value -is [Tuple[string]]) { return [string]$Value.Item1 }
     $Inner = ''
     $Outer = ''
@@ -187,7 +221,8 @@ function ConvertTo-JsonText {
         foreach ($Key in @($Value.Keys)) {
             $Parts.Add(
                 $Inner + (ConvertTo-JsonStringToken ([string]$Key)) + $Colon +
-                (ConvertTo-JsonText $Value[[string]$Key] ($Level + 1) $Unit $NewLine -Compact:$Compact)
+                (ConvertTo-JsonText $Value[[string]$Key] ($Level + 1) $Unit $NewLine `
+                    -Compact:$Compact -Canonical:$Canonical)
             )
         }
         return '{' + $Break + ($Parts -join (',' + $Break)) + $Break + $Outer + '}'
@@ -197,7 +232,8 @@ function ConvertTo-JsonText {
         $Parts = New-Object 'Collections.Generic.List[string]'
         foreach ($Item in $Value) {
             $Parts.Add(
-                $Inner + (ConvertTo-JsonText $Item ($Level + 1) $Unit $NewLine -Compact:$Compact)
+                $Inner + (ConvertTo-JsonText $Item ($Level + 1) $Unit $NewLine `
+                    -Compact:$Compact -Canonical:$Canonical)
             )
         }
         return '[' + $Break + ($Parts -join (',' + $Break)) + $Break + $Outer + ']'
@@ -256,15 +292,19 @@ function Get-LineIndent {
     if ($Index -le 0) { return $null }
     $Start = $Text.LastIndexOf([char]10, $Index - 1)
     $Prefix = $Text.Substring($Start + 1, $Index - $Start - 1)
-    if ($Start -lt 0 -or $Prefix.Trim().Length -ne 0) { return $null }
+    if ($Start -lt 0 -or $Prefix -match '[^ \t]') { return $null }
     return $Prefix
 }
 
 function Read-JsonFile {
     param([Parameter(Mandatory = $true)][string]$Path)
 
-    $Text = [IO.File]::ReadAllText($Path, [Text.Encoding]::UTF8)
-    return (Read-JsonDocument $Text)
+    $Bytes = [IO.File]::ReadAllBytes($Path)
+    $Offset = 0
+    if ($Bytes.Length -ge 3 -and $Bytes[0] -eq 0xEF -and $Bytes[1] -eq 0xBB -and $Bytes[2] -eq 0xBF) {
+        $Offset = 3
+    }
+    return (Read-JsonDocument ($script:Utf8Strict.GetString($Bytes, $Offset, $Bytes.Length - $Offset)))
 }
 
 function Get-MemberValue {
@@ -276,67 +316,86 @@ function Get-MemberValue {
     return $null
 }
 
-function Get-HookPolicy {
-    param([Parameter(Mandatory = $true)][string]$RuntimeRoot)
+function Get-PolicyPaths {
+    param($Document, [string]$Field)
 
-    $Document = Read-JsonFile (Join-Path $RuntimeRoot 'hooks-policy.json')
-    $Names = New-Object 'Collections.Generic.List[string]'
-    foreach ($Field in @('superseded', 'retired')) {
-        $Items = Get-MemberValue $Document $Field
-        if ($Items -isnot [Collections.ArrayList]) { throw 'Hook policy is invalid.' }
-        foreach ($Item in $Items) { $Names.Add(([string]$Item).ToLowerInvariant()) }
-    }
-    $Roots = New-Object 'Collections.Generic.List[string]'
-    $Items = Get-MemberValue $Document 'legacy_roots'
+    $Items = Get-MemberValue $Document $Field
     if ($Items -isnot [Collections.ArrayList]) { throw 'Hook policy is invalid.' }
-    foreach ($Item in $Items) { $Roots.Add(([string]$Item).ToLowerInvariant().TrimEnd('/')) }
-    return [pscustomobject]@{ Names = $Names; Roots = $Roots }
-}
-
-function Get-TemplateHooks {
-    param([Parameter(Mandatory = $true)][string]$RuntimeRoot)
-
-    $Path = Join-Path $RuntimeRoot 'settings.template.json'
-    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
-        $Path = Join-Path $RuntimeRoot 'settings.json'
-    }
-    $Hooks = Get-MemberValue (Read-JsonFile $Path) 'hooks'
-    if ($Hooks -isnot [Collections.Specialized.OrderedDictionary] -or $Hooks.Count -eq 0) {
-        throw 'Settings template has no hooks.'
-    }
-    foreach ($EventName in @($Hooks.Keys)) {
-        if ($Hooks[[string]$EventName] -isnot [Collections.ArrayList]) {
-            throw 'Settings template hooks are invalid.'
-        }
-    }
-    return $Hooks
-}
-
-# Пути скриптов внутри ~/.claude, на которые ссылается команда хука:
-# относительные, в нижнем регистре, с прямыми слэшами.
-function Get-ClaudeScriptReferences {
-    param([AllowEmptyString()][string]$Command)
-
     $Result = New-Object 'Collections.Generic.List[string]'
-    $Pattern = '(?i)[\\/]\.claude[\\/]+([^"''\s<>|]+?\.(?:ps1|py))(?![A-Za-z0-9_])'
-    foreach ($Match in [regex]::Matches($Command, $Pattern)) {
-        $Result.Add(([regex]::Replace($Match.Groups[1].Value, '[\\/]+', '/')).ToLowerInvariant())
+    foreach ($Item in $Items) {
+        $Value = Get-JsonString $Item
+        if ([string]::IsNullOrWhiteSpace($Value)) { throw 'Hook policy is invalid.' }
+        $Result.Add($Value.ToLowerInvariant().Trim('/'))
     }
     return , $Result
 }
 
-function Test-ManagedHookCommand {
-    param([AllowEmptyString()][string]$Command, [Parameter(Mandatory = $true)]$Policy)
+# Контекст сверки: что в ~/.claude принадлежит базе и как узнать домашний
+# каталог в тексте команды. Ссылка считается только от профиля пользователя:
+# одноимённый путь в проекте или на другом диске базе не принадлежит.
+function New-HookContext {
+    param([Parameter(Mandatory = $true)][string]$HomePath, [Parameter(Mandatory = $true)][string]$RuntimeRoot)
 
-    foreach ($Reference in (Get-ClaudeScriptReferences $Command)) {
-        if ($Reference.StartsWith('base/runtime/hooks/')) { return $true }
-        $Leaf = $Reference.Substring($Reference.LastIndexOf('/') + 1)
-        if (-not $Policy.Names.Contains($Leaf)) { continue }
-        foreach ($Root in $Policy.Roots) {
-            if ($Reference.StartsWith($Root + '/')) { return $true }
-        }
+    $Document = Read-JsonFile (Join-Path $RuntimeRoot 'hooks-policy.json')
+    $Previous = New-Object 'Collections.Generic.List[string]'
+    foreach ($Field in @('superseded', 'retired')) {
+        foreach ($Item in (Get-PolicyPaths $Document $Field)) { $Previous.Add($Item) }
     }
-    return $false
+    $Literal = [regex]::Escape($HomePath.TrimEnd('\', '/')).Replace('\\', '[\\/]+')
+    $HomePattern = '(?:\$HOME|\$env:USERPROFILE|\$\{env:USERPROFILE\}|%USERPROFILE%|~|' + $Literal + ')'
+    $Quoted = '(?:"(?<path>[^"]+)"|''(?<path>[^'']+)'')'
+    return [pscustomobject]@{
+        Previous = $Previous
+        PreviousSync = (Get-PolicyPaths $Document 'previous_sync')
+        LegacyRoots = (Get-PolicyPaths $Document 'legacy_roots')
+        # Известные формы запуска скрипта базы — команда целиком.
+        Launchers = @(
+            ('(?i)^\s*&\s*' + $Quoted + '\s*$'),
+            ('(?i)^\s*(?:powershell|pwsh)(?:\.exe)?' +
+                '(?:\s+-(?:NoProfile|NonInteractive|NoLogo)|\s+-(?:ExecutionPolicy|WindowStyle)\s+[A-Za-z]+)*' +
+                '\s+-File\s+' + $Quoted + '\s*$')
+        )
+        ProfilePath = ('(?i)^' + $HomePattern + '[\\/]+\.claude[\\/]+(?<rel>.+)$')
+        Reference = ('(?i)' + $HomePattern +
+            '[\\/]+\.claude[\\/]+(?<rel>[^"''\s<>|;]+?\.(?:ps1|py))(?![A-Za-z0-9_])')
+    }
+}
+
+function ConvertTo-RelativeKey {
+    param([string]$Value)
+
+    return ([regex]::Replace($Value, '[\\/]+', '/')).ToLowerInvariant()
+}
+
+# Скрипты внутри ~/.claude, упомянутые в команде в любом виде (для отчёта).
+function Get-ProfileReferences {
+    param([AllowEmptyString()][string]$Command, [Parameter(Mandatory = $true)]$Context)
+
+    $Result = New-Object 'Collections.Generic.List[string]'
+    foreach ($Match in [regex]::Matches($Command, $Context.Reference)) {
+        $Result.Add((ConvertTo-RelativeKey $Match.Groups['rel'].Value))
+    }
+    return , $Result
+}
+
+# Хук базы — это команда, которая целиком запускает скрипт релиза или
+# скрипт прежней базы из списка. Возвращает путь скрипта от ~/.claude.
+function Get-ManagedHookTarget {
+    param([AllowEmptyString()][string]$Command, [Parameter(Mandatory = $true)]$Context)
+
+    foreach ($Launcher in $Context.Launchers) {
+        $Match = [regex]::Match($Command, $Launcher)
+        if (-not $Match.Success) { continue }
+        $Path = [regex]::Match($Match.Groups['path'].Value, $Context.ProfilePath)
+        if (-not $Path.Success) { return $null }
+        $Relative = ConvertTo-RelativeKey $Path.Groups['rel'].Value
+        if ($Relative -cmatch '^base/runtime/hooks/[a-z0-9_.-]+\.ps1$' -or
+            $Context.Previous.Contains($Relative)) {
+            return $Relative
+        }
+        return $null
+    }
+    return $null
 }
 
 function Get-HookCommands {
@@ -352,20 +411,49 @@ function Get-HookCommands {
                 -not $Group.Contains('hooks') -or
                 $Group['hooks'] -isnot [Collections.ArrayList]) { continue }
             foreach ($Hook in $Group['hooks']) {
-                if ($Hook -is [Collections.Specialized.OrderedDictionary] -and
-                    $Hook.Contains('command') -and $Hook['command'] -is [string]) {
-                    $Result.Add([string]$Hook['command'])
-                }
+                if ($Hook -isnot [Collections.Specialized.OrderedDictionary] -or
+                    -not $Hook.Contains('command')) { continue }
+                $Command = Get-JsonString $Hook['command']
+                if ($null -ne $Command) { $Result.Add($Command) }
             }
         }
     }
     return , $Result
 }
 
+function Get-TemplateHooks {
+    param([Parameter(Mandatory = $true)][string]$RuntimeRoot, [Parameter(Mandatory = $true)]$Context)
+
+    $Path = Join-Path $RuntimeRoot 'settings.template.json'
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        $Path = Join-Path $RuntimeRoot 'settings.json'
+    }
+    $Hooks = Get-MemberValue (Read-JsonFile $Path) 'hooks'
+    if ($Hooks -isnot [Collections.Specialized.OrderedDictionary] -or $Hooks.Count -eq 0) {
+        throw 'Settings template has no hooks.'
+    }
+    foreach ($EventName in @($Hooks.Keys)) {
+        if ($Hooks[[string]$EventName] -isnot [Collections.ArrayList]) {
+            throw 'Settings template hooks are invalid.'
+        }
+    }
+    # Шаблон обязан распознаваться собственной сверкой, иначе повторный
+    # запуск добавлял бы его записи заново.
+    $Commands = Get-HookCommands $Hooks
+    if ($Commands.Count -eq 0) { throw 'Settings template has no hooks.' }
+    foreach ($Command in $Commands) {
+        if ($null -eq (Get-ManagedHookTarget $Command $Context)) {
+            throw 'Settings template hook is not a base runtime launcher.'
+        }
+    }
+    return $Hooks
+}
+
 function Get-ReconciledHooks {
-    param([AllowNull()]$Current, [Parameter(Mandatory = $true)]$Template, [Parameter(Mandatory = $true)]$Policy)
+    param([AllowNull()]$Current, [Parameter(Mandatory = $true)]$Template, [Parameter(Mandatory = $true)]$Context)
 
     $Removed = New-Object 'Collections.Generic.List[string]'
+    $Replaced = 0
     $Foreign = 0
     $Result = New-Object Collections.Specialized.OrderedDictionary
     if ($Current -is [Collections.Specialized.OrderedDictionary]) {
@@ -385,19 +473,19 @@ function Get-ReconciledHooks {
                 }
                 $KeptHooks = New-Object Collections.ArrayList
                 foreach ($Hook in $Group['hooks']) {
-                    $Managed = $false
-                    if ($Hook -is [Collections.Specialized.OrderedDictionary] -and
-                        $Hook.Contains('command') -and $Hook['command'] -is [string]) {
-                        $Managed = Test-ManagedHookCommand ([string]$Hook['command']) $Policy
+                    $Target = $null
+                    if ($Hook -is [Collections.Specialized.OrderedDictionary] -and $Hook.Contains('command')) {
+                        $Command = Get-JsonString $Hook['command']
+                        if ($null -ne $Command) { $Target = Get-ManagedHookTarget $Command $Context }
                     }
-                    if ($Managed) {
-                        foreach ($Reference in (Get-ClaudeScriptReferences ([string]$Hook['command']))) {
-                            if (-not $Removed.Contains($Reference)) { $Removed.Add($Reference) }
-                        }
-                    }
-                    else {
+                    if ($null -eq $Target) {
                         [void]$KeptHooks.Add($Hook)
                         $Foreign++
+                        continue
+                    }
+                    $Replaced++
+                    if ($Context.Previous.Contains($Target) -and -not $Removed.Contains($Target)) {
+                        $Removed.Add($Target)
                     }
                 }
                 if ($KeptHooks.Count -eq 0) { continue }
@@ -420,114 +508,209 @@ function Get-ReconciledHooks {
         }
         else { $Result.Add([string]$EventName, $Merged) }
     }
-    return [pscustomobject]@{ Hooks = $Result; Removed = $Removed; Foreign = $Foreign }
-}
-
-function Read-SettingsFile {
-    param([Parameter(Mandatory = $true)][string]$Path)
-
-    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
-        return [pscustomobject]@{ Exists = $false; Bytes = $null; Bom = $false; Text = '' }
+    return [pscustomobject]@{
+        Hooks = $Result
+        Removed = $Removed
+        Replaced = $Replaced
+        Foreign = $Foreign
     }
-    $Bytes = [IO.File]::ReadAllBytes($Path)
-    $Bom = ($Bytes.Length -ge 3 -and $Bytes[0] -eq 0xEF -and $Bytes[1] -eq 0xBB -and $Bytes[2] -eq 0xBF)
-    $Text = if ($Bom) {
-        [Text.Encoding]::UTF8.GetString($Bytes, 3, $Bytes.Length - 3)
-    } else {
-        [Text.Encoding]::UTF8.GetString($Bytes)
-    }
-    return [pscustomobject]@{ Exists = $true; Bytes = $Bytes; Bom = $Bom; Text = $Text }
 }
 
 function Test-SameBytes {
-    param([AllowNull()][byte[]]$Left, [AllowNull()][byte[]]$Right)
+    param([AllowNull()][AllowEmptyCollection()][byte[]]$Left, [AllowNull()][AllowEmptyCollection()][byte[]]$Right)
 
     if ($null -eq $Left -or $null -eq $Right) { return ($null -eq $Left -and $null -eq $Right) }
     if ($Left.Length -ne $Right.Length) { return $false }
     return ([Convert]::ToBase64String($Left) -ceq [Convert]::ToBase64String($Right))
 }
 
-function Save-SettingsBackup {
-    param([Parameter(Mandatory = $true)][string]$HomePath, [Parameter(Mandatory = $true)][byte[]]$Bytes)
+# Состояние settings.json. Reason заполнен, когда файл нельзя трогать.
+function Read-SettingsState {
+    param([Parameter(Mandatory = $true)][string]$Path)
 
-    $Root = Join-Path $HomePath '.claude\base\state\settings-backups'
-    [IO.Directory]::CreateDirectory($Root) | Out-Null
-    $Name = 'settings-' + [DateTime]::UtcNow.ToString('yyyyMMddTHHmmssfffZ') + '.json'
-    [IO.File]::WriteAllBytes((Join-Path $Root $Name), $Bytes)
-    $Old = @(Get-ChildItem -LiteralPath $Root -Filter 'settings-*.json' -File |
-        Sort-Object -Property Name -Descending | Select-Object -Skip 10)
-    foreach ($Item in $Old) { Remove-Item -LiteralPath $Item.FullName -Force }
+    $State = [pscustomobject]@{
+        Reason = $null; Unreadable = $false; Exists = $false; Bytes = $null; Bom = $false
+        Text = ''; Blank = $true; Document = $null; Member = $null; Hooks = $null
+    }
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $State }
+    $State.Exists = $true
+    $Bytes = [IO.File]::ReadAllBytes($Path)
+    $State.Bytes = $Bytes
+    if ($Bytes.Length -gt $script:MaxSettingsBytes) {
+        $State.Reason = 'settings.json is too large to reconcile'
+        $State.Unreadable = $true
+        return $State
+    }
+    $Offset = 0
+    if ($Bytes.Length -ge 3 -and $Bytes[0] -eq 0xEF -and $Bytes[1] -eq 0xBB -and $Bytes[2] -eq 0xBF) {
+        $State.Bom = $true
+        $Offset = 3
+    }
+    try {
+        # Строгое чтение: байты вне UTF-8 при записи превратились бы в мусор.
+        $Text = $script:Utf8Strict.GetString($Bytes, $Offset, $Bytes.Length - $Offset)
+        $Encoded = $script:Utf8Strict.GetBytes($Text)
+        if ($Encoded.Length -ne $Bytes.Length - $Offset) { throw 'UTF-8 round trip differs.' }
+    }
+    catch {
+        $State.Reason = 'settings.json is not valid UTF-8'
+        $State.Unreadable = $true
+        return $State
+    }
+    $State.Text = $Text
+    $State.Blank = ($Text -notmatch $script:JsonGapPattern)
+    if ($State.Blank) { return $State }
+    try { $State.Document = Read-JsonDocument $Text }
+    catch {
+        $State.Reason = 'settings.json is not valid JSON'
+        $State.Unreadable = $true
+        return $State
+    }
+    foreach ($Candidate in $State.Document.Members) {
+        if ([string]$Candidate.Key -ceq 'hooks') { $State.Member = $Candidate }
+    }
+    if ($null -ne $State.Member) {
+        if ($State.Member.Value -isnot [Collections.Specialized.OrderedDictionary]) {
+            $State.Reason = 'settings.json hooks value is not an object'
+            return $State
+        }
+        $State.Hooks = $State.Member.Value
+    }
+    return $State
+}
+
+function Save-SettingsBackup {
+    param(
+        [Parameter(Mandatory = $true)][string]$Root,
+        [Parameter(Mandatory = $true)][string]$Displaced,
+        [Parameter(Mandatory = $true)][AllowEmptyCollection()][byte[]]$Bytes
+    )
+
+    $Algorithm = [Security.Cryptography.SHA256]::Create()
+    try {
+        $Hash = (-join ($Algorithm.ComputeHash($Bytes) | ForEach-Object { $_.ToString('x2') })).Substring(0, 12)
+    }
+    finally { $Algorithm.Dispose() }
+    # Одно и то же состояние второй раз не копируется.
+    $Same = @(Get-ChildItem -LiteralPath $Root -Filter ('settings-*-' + $Hash + '.json') -File)
+    if ($Same.Count -gt 0) { return ('.claude/base/state/settings-backups/' + $Same[0].Name) }
+    $Name = 'settings-' + [DateTime]::UtcNow.ToString('yyyyMMddTHHmmssfffZ') + '-' + $Hash + '.json'
+    [IO.File]::Move($Displaced, (Join-Path $Root $Name))
+    # Хранятся самая первая копия (состояние до первой сверки) и девять последних.
+    $All = @(Get-ChildItem -LiteralPath $Root -Filter 'settings-*.json' -File | Sort-Object -Property Name)
+    if ($All.Count -gt 10) {
+        foreach ($Item in $All[1..($All.Count - 10)]) { Remove-Item -LiteralPath $Item.FullName -Force }
+    }
     return ('.claude/base/state/settings-backups/' + $Name)
 }
 
+function New-ReconcileResult {
+    param([string]$Status, [AllowNull()][string]$Reason = $null, $Plan = $null, [AllowNull()][string]$Backup = $null)
+
+    $Removed = @()
+    $Replaced = 0
+    $Foreign = 0
+    if ($null -ne $Plan) {
+        $Removed = @($Plan.Removed | Sort-Object)
+        $Replaced = [int]$Plan.Replaced
+        $Foreign = [int]$Plan.Foreign
+    }
+    # Параметры типа string не хранят $null, поэтому пустое значение
+    # переносится в нетипизированные переменные.
+    $ReasonValue = $null
+    $BackupValue = $null
+    if (-not [string]::IsNullOrEmpty($Reason)) { $ReasonValue = $Reason }
+    if (-not [string]::IsNullOrEmpty($Backup)) { $BackupValue = $Backup }
+    return [pscustomobject][ordered]@{
+        status = $Status; reason = $ReasonValue; replaced = $Replaced
+        removed = $Removed; foreign = $Foreign; backup = $BackupValue
+    }
+}
+
+# Синхронизация прежней базы в конце своего хука заново вливает хуки из общего
+# шаблона. Пока она идёт на том же старте сессии, сверка была бы тут же
+# отменена, поэтому её завершения ждут.
+function Wait-PreviousSync {
+    param([int]$Seconds, [Parameter(Mandatory = $true)]$Context)
+
+    $Names = @($Context.PreviousSync | ForEach-Object { [regex]::Escape($_).Replace('/', '[\\/]+') })
+    $Pattern = '(?i)[\\/]\.claude[\\/]+(?:' + ($Names -join '|') + ')'
+    $Deadline = [DateTime]::UtcNow.AddSeconds($Seconds)
+    Start-Sleep -Milliseconds 1000
+    while ($true) {
+        $Running = @(
+            Get-CimInstance -ClassName Win32_Process `
+                -Filter "Name = 'powershell.exe' OR Name = 'pwsh.exe'" -ErrorAction Stop |
+                Where-Object { $_.ProcessId -ne $PID -and [string]$_.CommandLine -match $Pattern }
+        )
+        if ($Running.Count -eq 0) { return $true }
+        if ([DateTime]::UtcNow -ge $Deadline) { return $false }
+        Start-Sleep -Milliseconds 500
+    }
+}
+
+function Test-PreviousSyncWired {
+    param([AllowNull()]$Hooks, [Parameter(Mandatory = $true)]$Context)
+
+    foreach ($Command in (Get-HookCommands $Hooks)) {
+        foreach ($Reference in (Get-ProfileReferences $Command $Context)) {
+            if ($Context.PreviousSync.Contains($Reference)) { return $true }
+        }
+    }
+    return $false
+}
+
 function Invoke-HooksReconcile {
-    param([string]$HomePath, [string]$RuntimeRoot, [switch]$Check)
+    param([string]$HomePath, [string]$RuntimeRoot, [int]$WaitSeconds, [switch]$Check)
 
-    $Template = Get-TemplateHooks $RuntimeRoot
-    $Policy = Get-HookPolicy $RuntimeRoot
+    $Context = New-HookContext $HomePath $RuntimeRoot
+    $Template = Get-TemplateHooks $RuntimeRoot $Context
     $Path = Join-Path $HomePath '.claude\settings.json'
-    $File = Read-SettingsFile $Path
-    $Text = [string]$File.Text
-    $Blank = ($Text.Trim().Length -eq 0)
-    $Document = $null
-    $Member = $null
-    if (-not $Blank) {
-        try { $Document = Read-JsonDocument $Text }
-        catch {
-            return [pscustomobject][ordered]@{
-                status = 'BLOCKED'; reason = 'settings.json is not valid JSON'
-                removed = @(); foreign = 0; backup = $null
-            }
+    $State = Read-SettingsState $Path
+    if ($State.Reason) { return (New-ReconcileResult 'BLOCKED' $State.Reason) }
+
+    if (-not $Check -and $WaitSeconds -gt 0 -and (Test-PreviousSyncWired $State.Hooks $Context)) {
+        $Finished = $false
+        try { $Finished = Wait-PreviousSync $WaitSeconds $Context } catch { $Finished = $false }
+        if (-not $Finished) {
+            return (New-ReconcileResult 'DEFERRED' 'the previous base sync is still running')
         }
-        foreach ($Candidate in $Document.Members) {
-            if ([string]$Candidate.Key -ceq 'hooks') { $Member = $Candidate }
-        }
-    }
-    $Current = $null
-    if ($null -ne $Member) { $Current = $Member.Value }
-    if ($null -ne $Member -and $Current -isnot [Collections.Specialized.OrderedDictionary]) {
-        return [pscustomobject][ordered]@{
-            status = 'BLOCKED'; reason = 'settings.json hooks value is not an object'
-            removed = @(); foreign = 0; backup = $null
-        }
-    }
-    $Plan = Get-ReconciledHooks $Current $Template $Policy
-    $Removed = @($Plan.Removed | Sort-Object)
-    if ($null -ne $Current -and
-        (ConvertTo-JsonText $Current -Compact) -ceq (ConvertTo-JsonText $Plan.Hooks -Compact)) {
-        return [pscustomobject][ordered]@{
-            status = 'CANONICAL'; reason = $null
-            removed = @(); foreign = [int]$Plan.Foreign; backup = $null
-        }
-    }
-    if ($Check) {
-        return [pscustomobject][ordered]@{
-            status = 'WOULD_UPDATE'; reason = $null
-            removed = $Removed; foreign = [int]$Plan.Foreign; backup = $null
-        }
+        $State = Read-SettingsState $Path
+        if ($State.Reason) { return (New-ReconcileResult 'BLOCKED' $State.Reason) }
     }
 
+    $Plan = Get-ReconciledHooks $State.Hooks $Template $Context
+    if ($null -ne $State.Hooks -and
+        (ConvertTo-JsonText $State.Hooks -Compact -Canonical) -ceq
+        (ConvertTo-JsonText $Plan.Hooks -Compact -Canonical)) {
+        $Plan.Removed.Clear()
+        $Plan.Replaced = 0
+        return (New-ReconcileResult 'CANONICAL' $null $Plan)
+    }
+    if ($Check) { return (New-ReconcileResult 'WOULD_UPDATE' $null $Plan) }
+
+    $Text = [string]$State.Text
     $NewLine = if ($Text.Contains("`r`n")) { "`r`n" } else { "`n" }
-    if ($Blank) {
+    if ($State.Blank) {
         $NewText = '{' + $NewLine + '  "hooks": ' +
             (ConvertTo-JsonText $Plan.Hooks 1 '  ' $NewLine) + $NewLine + '}' + $NewLine
     }
-    elseif ($null -ne $Member) {
-        $Indent = Get-LineIndent $Text ([int]$Member.KeyIndex)
+    elseif ($null -ne $State.Member) {
+        $Indent = Get-LineIndent $Text ([int]$State.Member.KeyIndex)
         $Level = 1
         $Unit = $Indent
         if ([string]::IsNullOrEmpty($Indent)) { $Level = 0; $Unit = '  ' }
-        $NewText = $Text.Substring(0, [int]$Member.ValueStart) +
+        $NewText = $Text.Substring(0, [int]$State.Member.ValueStart) +
             (ConvertTo-JsonText $Plan.Hooks $Level $Unit $NewLine) +
-            $Text.Substring([int]$Member.ValueEnd)
+            $Text.Substring([int]$State.Member.ValueEnd)
     }
-    elseif ($Document.Members.Count -eq 0) {
-        $NewText = $Text.Substring(0, [int]$Document.OpenIndex + 1) + $NewLine + '  "hooks": ' +
+    elseif ($State.Document.Members.Count -eq 0) {
+        $NewText = $Text.Substring(0, [int]$State.Document.OpenIndex + 1) + $NewLine + '  "hooks": ' +
             (ConvertTo-JsonText $Plan.Hooks 1 '  ' $NewLine) + $NewLine +
-            $Text.Substring([int]$Document.CloseIndex)
+            $Text.Substring([int]$State.Document.CloseIndex)
     }
     else {
-        $Last = $Document.Members[$Document.Members.Count - 1]
+        $Last = $State.Document.Members[$State.Document.Members.Count - 1]
         $Indent = Get-LineIndent $Text ([int]$Last.KeyIndex)
         $Level = 1
         $Unit = $Indent
@@ -539,42 +722,46 @@ function Invoke-HooksReconcile {
     }
 
     $Verified = Get-MemberValue (Read-JsonDocument $NewText) 'hooks'
-    if ((ConvertTo-JsonText $Verified -Compact) -cne (ConvertTo-JsonText $Plan.Hooks -Compact)) {
+    if ((ConvertTo-JsonText $Verified -Compact -Canonical) -cne
+        (ConvertTo-JsonText $Plan.Hooks -Compact -Canonical)) {
         throw 'Reconciled settings failed self-check.'
     }
-    $NewBytes = $Utf8NoBom.GetBytes($NewText)
-    if ($File.Bom) { $NewBytes = [byte[]](0xEF, 0xBB, 0xBF) + $NewBytes }
+    $NewBytes = $script:Utf8Strict.GetBytes($NewText)
+    if ($State.Bom) { $NewBytes = [byte[]](0xEF, 0xBB, 0xBF) + $NewBytes }
 
+    $Backups = Join-Path $HomePath '.claude\base\state\settings-backups'
+    $Stamp = [Guid]::NewGuid().ToString('N')
+    $Temporary = $Path + '.hygiene-' + $Stamp + '.tmp'
+    $Displaced = $Path + '.hygiene-' + $Stamp + '.old'
     $Backup = $null
-    [IO.Directory]::CreateDirectory((Split-Path -Parent $Path)) | Out-Null
-    if ($File.Exists) {
-        $Backup = Save-SettingsBackup $HomePath $File.Bytes
-        # Клиент мог переписать файл, пока шла сверка: тогда не трогаем.
-        if (-not (Test-SameBytes ([IO.File]::ReadAllBytes($Path)) $File.Bytes)) {
-            return [pscustomobject][ordered]@{
-                status = 'BLOCKED'; reason = 'settings.json changed during reconcile'
-                removed = @(); foreign = [int]$Plan.Foreign; backup = $Backup
+    try {
+        [IO.Directory]::CreateDirectory((Split-Path -Parent $Path)) | Out-Null
+        [IO.File]::WriteAllBytes($Temporary, $NewBytes)
+        if (-not $State.Exists) {
+            [IO.File]::Move($Temporary, $Path)
+        }
+        else {
+            # Без места для копии файл не заменяется.
+            [IO.Directory]::CreateDirectory($Backups) | Out-Null
+            try { [IO.File]::Replace($Temporary, $Path, $Displaced) }
+            catch { return (New-ReconcileResult 'BLOCKED' 'settings.json could not be replaced' $Plan) }
+            # Заменённый файл и есть копия. Если клиент успел переписать
+            # настройки после чтения, возвращается его версия.
+            if (-not (Test-SameBytes ([IO.File]::ReadAllBytes($Displaced)) $State.Bytes)) {
+                [IO.File]::Replace($Displaced, $Path, [NullString]::Value)
+                return (New-ReconcileResult 'BLOCKED' 'settings.json changed during reconcile' $Plan)
+            }
+            $Backup = Save-SettingsBackup $Backups $Displaced $State.Bytes
+        }
+    }
+    finally {
+        foreach ($Leftover in @($Temporary, $Displaced)) {
+            if (Test-Path -LiteralPath $Leftover -PathType Leaf) {
+                Remove-Item -LiteralPath $Leftover -Force -ErrorAction SilentlyContinue
             }
         }
     }
-    $Temporary = $Path + '.hygiene-' + [Guid]::NewGuid().ToString('N') + '.tmp'
-    try {
-        [IO.File]::WriteAllBytes($Temporary, $NewBytes)
-        if ($File.Exists) {
-            try { [IO.File]::Replace($Temporary, $Path, [NullString]::Value) }
-            catch { [IO.File]::Copy($Temporary, $Path, $true) }
-        }
-        else { [IO.File]::Move($Temporary, $Path) }
-    }
-    finally {
-        if (Test-Path -LiteralPath $Temporary -PathType Leaf) {
-            Remove-Item -LiteralPath $Temporary -Force
-        }
-    }
-    return [pscustomobject][ordered]@{
-        status = 'UPDATED'; reason = $null
-        removed = $Removed; foreign = [int]$Plan.Foreign; backup = $Backup
-    }
+    return (New-ReconcileResult 'UPDATED' $null $Plan $Backup)
 }
 
 function New-Finding {
@@ -588,9 +775,14 @@ function Invoke-LegacyScan {
 
     $Findings = New-Object Collections.ArrayList
     $Claude = Join-Path $HomePath '.claude'
-    $Policy = Get-HookPolicy $RuntimeRoot
+    $Context = New-HookContext $HomePath $RuntimeRoot
+    $State = Read-SettingsState (Join-Path $Claude 'settings.json')
 
-    if ($null -ne $Reconcile -and [string]$Reconcile.status -in @('BLOCKED', 'WOULD_UPDATE')) {
+    if ($State.Unreadable) {
+        [void]$Findings.Add((New-Finding 'settings_unreadable' '.claude/settings.json' `
+            ([string]$State.Reason + '; hooks were not checked')))
+    }
+    elseif ($null -ne $Reconcile -and [string]$Reconcile.status -in @('BLOCKED', 'WOULD_UPDATE', 'DEFERRED')) {
         $Detail = 'hooks in settings.json differ from the release'
         if ($Reconcile.reason) { $Detail = [string]$Reconcile.reason }
         [void]$Findings.Add((New-Finding 'hooks_not_canonical' '.claude/settings.json' $Detail))
@@ -601,18 +793,10 @@ function Invoke-LegacyScan {
             'instruction file outside the release; the client may load it next to CLAUDE.md'))
     }
 
-    $Hooks = $null
-    $File = Read-SettingsFile (Join-Path $Claude 'settings.json')
-    if ($File.Exists -and ([string]$File.Text).Trim().Length -ne 0) {
-        try { $Hooks = Get-MemberValue (Read-JsonDocument ([string]$File.Text)) 'hooks' }
-        catch {
-            [void]$Findings.Add((New-Finding 'settings_unreadable' '.claude/settings.json' `
-                'settings.json is not valid JSON; hooks were not checked'))
-        }
-    }
     $Seen = @{}
-    foreach ($Command in (Get-HookCommands $Hooks)) {
-        foreach ($Reference in (Get-ClaudeScriptReferences $Command)) {
+    $Old = 0
+    foreach ($Command in (Get-HookCommands $State.Hooks)) {
+        foreach ($Reference in (Get-ProfileReferences $Command $Context)) {
             if ($Seen.ContainsKey($Reference)) { continue }
             $Seen[$Reference] = $true
             $Target = Join-Path $Claude ($Reference.Replace('/', '\'))
@@ -621,8 +805,9 @@ function Invoke-LegacyScan {
                     'a hook points to a script that does not exist'))
                 continue
             }
-            foreach ($Root in $Policy.Roots) {
+            foreach ($Root in $Context.LegacyRoots) {
                 if ($Reference.StartsWith($Root + '/')) {
+                    $Old++
                     [void]$Findings.Add((New-Finding 'hook_old_location' ('.claude/' + $Reference) `
                         'a hook outside the release runs a script from the previous base location'))
                     break
@@ -638,12 +823,13 @@ function Invoke-LegacyScan {
     $Scripts = Join-Path $Claude 'scripts'
     if (Test-Path -LiteralPath $Scripts -PathType Container) {
         $Count = @(Get-ChildItem -LiteralPath $Scripts -Recurse -File -ErrorAction SilentlyContinue).Count
-        [void]$Findings.Add((New-Finding 'old_scripts' '.claude/scripts' `
-            ("scripts of the previous base: $Count file(s)")))
+        $Detail = "scripts of the previous base: $Count file(s)"
+        if ($Old -gt 0) { $Detail += "; $Old of them still run from hooks outside the release" }
+        [void]$Findings.Add((New-Finding 'old_scripts' '.claude/scripts' $Detail))
     }
     if (Test-Path -LiteralPath (Join-Path $Claude 'settings.shared.json') -PathType Leaf) {
         [void]$Findings.Add((New-Finding 'old_settings_template' '.claude/settings.shared.json' `
-            'settings template of the previous base'))
+            'settings template of the previous base; its sync rewrites hooks from this file'))
     }
 
     $Cold = Join-Path $Claude 'base\cold\memory'
@@ -674,16 +860,17 @@ try {
     $HomePath = [IO.Path]::GetFullPath($HomePath)
     $RuntimeRoot = [IO.Path]::GetFullPath($RuntimeRoot)
     if ($Action -in @('All', 'Reconcile')) {
-        try { $Report.hooks = Invoke-HooksReconcile -HomePath $HomePath -RuntimeRoot $RuntimeRoot -Check:$Check }
-        catch {
-            $Report.hooks = [pscustomobject][ordered]@{
-                status = 'BLOCKED'; reason = [string]$_.Exception.Message
-                removed = @(); foreign = 0; backup = $null
-            }
+        try {
+            $Report.hooks = Invoke-HooksReconcile -HomePath $HomePath -RuntimeRoot $RuntimeRoot `
+                -WaitSeconds $WaitPreviousSyncSeconds -Check:$Check
         }
+        catch { $Report.hooks = New-ReconcileResult 'BLOCKED' ([string]$_.Exception.Message) }
     }
     if ($Action -in @('All', 'Scan')) {
-        try { $Report.legacy = Invoke-LegacyScan -HomePath $HomePath -RuntimeRoot $RuntimeRoot -Reconcile $Report.hooks }
+        try {
+            $Report.legacy = Invoke-LegacyScan -HomePath $HomePath -RuntimeRoot $RuntimeRoot `
+                -Reconcile $Report.hooks
+        }
         catch {
             $Report.legacy = [pscustomobject][ordered]@{
                 status = 'FOUND'
@@ -693,10 +880,7 @@ try {
     }
 }
 catch {
-    $Report.hooks = [pscustomobject][ordered]@{
-        status = 'BLOCKED'; reason = [string]$_.Exception.Message
-        removed = @(); foreign = 0; backup = $null
-    }
+    $Report.hooks = New-ReconcileResult 'BLOCKED' ([string]$_.Exception.Message)
 }
 $Report | ConvertTo-Json -Compress -Depth 6
 exit 0

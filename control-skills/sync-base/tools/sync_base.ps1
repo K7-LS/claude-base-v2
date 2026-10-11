@@ -747,27 +747,33 @@ function Invoke-LlmBaseHygiene {
     if ($null -ne $report.hooks) {
         switch -CaseSensitive ([string]$report.hooks.status) {
             'UPDATED' {
-                Write-Host (
-                    'Хуки в settings.json приведены к набору релиза; ' +
-                    'снято записей прежней базы: ' +
-                    @($report.hooks.removed).Count + '. Копия: ' +
-                    [string]$report.hooks.backup +
-                    '. Изменение действует со следующей сессии.'
-                )
+                $line = 'Хуки базы в settings.json приведены к набору релиза.'
+                $removed = @($report.hooks.removed).Count
+                if ($removed -gt 0) {
+                    $line += ' Снято скриптов прежней базы: ' + $removed + '.'
+                }
+                if (-not [string]::IsNullOrEmpty([string]$report.hooks.backup)) {
+                    $line += ' Прежний файл: ' + [string]$report.hooks.backup + '.'
+                }
+                Write-Host ($line + ' Изменение действует со следующей сессии.')
             }
             'CANONICAL' {
-                Write-Host 'Хуки в settings.json соответствуют релизу.'
+                Write-Host 'Хуки базы в settings.json соответствуют релизу.'
             }
             default {
                 Write-Host (
                     'Хуки в settings.json не сверены: ' +
-                    [string]$report.hooks.reason
+                    [string]$report.hooks.reason + '.'
                 )
             }
         }
     }
     if ($null -ne $report.legacy) {
-        $findings = @($report.legacy.findings)
+        # Замечания о самом settings.json остатками прежней базы не считаются.
+        $own = @('settings_unreadable', 'hooks_not_canonical', 'scan_failed')
+        $findings = @($report.legacy.findings | Where-Object {
+            [string]$_.id -notin $own
+        })
         if ($findings.Count -eq 0) {
             Write-Host 'Остатков прежней базы не найдено.'
         }

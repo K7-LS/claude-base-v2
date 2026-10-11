@@ -63,7 +63,12 @@ def _json_bytes(value: object) -> bytes:
     ).encode("utf-8")
 
 
-HOOK_SCRIPT = re.compile(r"\\base\\runtime\\hooks\\([A-Za-z0-9_-]+)\.ps1\"$")
+# Единственная форма команды хука базы: запуск скрипта релиза, не зависящий от
+# политики выполнения PowerShell на ПК.
+HOOK_COMMAND = re.compile(
+    r"powershell\.exe -NoProfile -ExecutionPolicy Bypass -File "
+    r"\"\$HOME\\\.claude\\base\\runtime\\hooks\\([a-z0-9-]+)\.ps1\""
+)
 
 
 def declared_hooks(repo_root: Path, contract: dict[str, object]) -> list[str]:
@@ -73,9 +78,16 @@ def declared_hooks(repo_root: Path, contract: dict[str, object]) -> list[str]:
     for event, groups in settings["hooks"].items():
         for group in groups:
             for hook in group["hooks"]:
-                script = HOOK_SCRIPT.search(str(hook["command"]))
-                if script is None:
-                    raise ValueError("settings template hook is outside base runtime")
+                script = HOOK_COMMAND.fullmatch(str(hook["command"]))
+                if (
+                    script is None
+                    or hook.get("type") != "command"
+                    or hook.get("shell") != "powershell"
+                    or not (
+                        repo_root / "runtime" / "hooks" / f"{script.group(1)}.ps1"
+                    ).is_file()
+                ):
+                    raise ValueError("settings template hook is not a base runtime launcher")
                 declared.append(
                     f"{event}:{group.get('matcher', '')}:{script.group(1)}"
                 )
