@@ -49,10 +49,11 @@ Hindsight хранит извлечённый опыт и подкладывае
   `~/.claude/skills/hindsight-coding-agent`. Старый плагин Hindsight для
   Claude Code одновременно с ним не включай: хук `SessionStart` предупреждает о
   нём событием `legacy_plugin_active`.
-- `~/.claude/settings.json` вне управляемой поверхности Claude Base (база
-  кладёт только `base/runtime/settings.template.json`), а `~/.claude.json`
-  входит в её `preserved_paths`. Поэтому `$sync-base` не переписывает хуки и
-  MCP Hindsight, и переносить их, как у Codex, не нужно.
+- В `~/.claude/settings.json` Claude Base ведёт только собственные хуки:
+  `base/runtime/hygiene.ps1` заменяет записи базы на набор релиза, а чужие
+  хуки оставляет как есть. `~/.claude.json` входит в `preserved_paths` базы.
+  Поэтому `$sync-base` не переписывает хуки и MCP Hindsight, и переносить их,
+  как у Codex, не нужно.
 - Навык `hindsight-coding-agent` Foundation Claude видит как неизвестную
   запись. `$sync-base` получает `BLOCKED_USER_DECISION`, берёт неизвестные
   записи из `plan` и повторяет установку с `-LocalExceptionPath`; итог —
@@ -61,8 +62,9 @@ Hindsight хранит извлечённый опыт и подкладывае
   завершается `FAILED_DOCTOR` с кодом `ACTIVE_DRIFT`, пока не пройдёт
   следующий `$sync-base`. Не обходи `doctor` правкой `active.json`.
 - После подключения проверь: по одному Hindsight-хуку на каждое из трёх
-  событий рядом с хуками пользователя (хук базы `check-release` стоит только на
-  `SessionStart`); `claude mcp list` показывает `hindsight` подключённым (сам
+  событий рядом с хуками пользователя (хуки базы стоят на `SessionStart`,
+  `UserPromptSubmit` и `PreToolUse`, на `Stop` их нет); `claude mcp list`
+  показывает `hindsight` подключённым (сам
   статус MCP работу API не доказывает); `/health` локального API отвечает 200.
 - Пока банк «холодный» или в нём нет knowledge pages, первый запрос нового
   сеанса идёт без памяти (`reflect_deferred_new_bank` в журнале хука). При

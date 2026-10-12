@@ -63,6 +63,39 @@ def _json_bytes(value: object) -> bytes:
     ).encode("utf-8")
 
 
+# Единственная форма команды хука базы: запуск скрипта релиза, не зависящий от
+# политики выполнения PowerShell на ПК.
+HOOK_COMMAND = re.compile(
+    r"powershell\.exe -NoProfile -ExecutionPolicy Bypass -File "
+    r"\"\$HOME\\\.claude\\base\\runtime\\hooks\\([a-z0-9-]+)\.ps1\""
+)
+
+
+def declared_hooks(repo_root: Path, contract: dict[str, object]) -> list[str]:
+    """Хуки релиза в виде «событие:matcher:скрипт» — из шаблона настроек."""
+    settings = _load_json(repo_root / str(contract["paths"]["config_source"]))
+    declared: list[str] = []
+    for event, groups in settings["hooks"].items():
+        for group in groups:
+            for hook in group["hooks"]:
+                script = HOOK_COMMAND.fullmatch(str(hook["command"]))
+                if (
+                    script is None
+                    or hook.get("type") != "command"
+                    or hook.get("shell") != "powershell"
+                    or not (
+                        repo_root / "runtime" / "hooks" / f"{script.group(1)}.ps1"
+                    ).is_file()
+                ):
+                    raise ValueError("settings template hook is not a base runtime launcher")
+                declared.append(
+                    f"{event}:{group.get('matcher', '')}:{script.group(1)}"
+                )
+    if len(declared) != len(set(declared)):
+        raise ValueError("settings template repeats a hook")
+    return sorted(declared)
+
+
 def _build_desired_state(repo_root: Path, contract: dict[str, object]) -> dict[str, object]:
     agents = _load_json(repo_root / "catalog" / "agents.json")
     skills = _load_json(repo_root / "catalog" / "skills.json")
@@ -74,7 +107,7 @@ def _build_desired_state(repo_root: Path, contract: dict[str, object]) -> dict[s
         "unknown_policy": "prompt-every-run",
         "skills": sorted(str(row["id"]) for row in skills),
         "agents": sorted(str(row["id"]) for row in agents),
-        "hooks": ["SessionStart:startup:check-release"],
+        "hooks": declared_hooks(repo_root, contract),
         "managed_files": [
             str(contract["paths"]["hot_destination"]),
             str(contract["paths"]["config_destination"]),

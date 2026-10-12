@@ -69,6 +69,85 @@ function Get-DailyReleaseMessage {
     return "Claude-base $LatestText is available. Run `$sync-base to verify and install it."
 }
 
+# Сверка хуков и остатки прежней базы. Подпись состава замечаний
+# сохраняется уже после вывода: оборванный хук не «съедает» уведомление.
+function Get-HygieneOutcome {
+    param([int]$WaitSeconds)
+
+    $Outcome = [pscustomobject]@{ Messages = @(); Signature = $null; StatePath = $null }
+    $RuntimeRoot = Split-Path -Parent $PSScriptRoot
+    $Hygiene = Join-Path $RuntimeRoot 'hygiene.ps1'
+    $BaseHome = Join-Path $env:USERPROFILE '.claude\base'
+    # Сверка идёт только из установленного слоя: запуск хука из исходников
+    # или с чужим профилем настройки не трогает.
+    if (-not (Test-Path -LiteralPath $Hygiene -PathType Leaf) -or
+        -not (Test-Path -LiteralPath (Join-Path $BaseHome 'VERSION') -PathType Leaf) -or
+        -not [string]::Equals(
+            [IO.Path]::GetFullPath($RuntimeRoot).TrimEnd('\'),
+            [IO.Path]::GetFullPath((Join-Path $BaseHome 'runtime')).TrimEnd('\'),
+            [StringComparison]::OrdinalIgnoreCase
+        )) { return $Outcome }
+
+    $Report = (
+        @(& $Hygiene -Action All -SessionStart -WaitPreviousSyncSeconds $WaitSeconds 2>$null) -join "`n"
+    ) | ConvertFrom-Json
+    $Messages = @()
+    if ($Report.hooks -and [string]$Report.hooks.status -ceq 'UPDATED') {
+        $Text = 'Claude-base hooks in settings.json were aligned with the installed release'
+        $Removed = @($Report.hooks.removed).Count
+        if ($Removed -gt 0) {
+            $Text += " ($Removed hook script(s) of the previous base unhooked)"
+        }
+        if ($Report.hooks.backup) {
+            $Text += '; the previous file is kept in base\state\settings-backups'
+        }
+        $Messages += ($Text + '. They apply from the next session.')
+    }
+
+    $Findings = @()
+    if ($Report.legacy) { $Findings = @($Report.legacy.findings) }
+    $Signature = @(
+        $Findings | ForEach-Object { [string]$_.id + ':' + [string]$_.path } | Sort-Object
+    ) -join '|'
+    $StatePath = Join-Path $BaseHome 'state\hygiene.json'
+    $Previous = $null
+    if (Test-Path -LiteralPath $StatePath -PathType Leaf) {
+        try {
+            $Previous = [string](
+                Get-Content -LiteralPath $StatePath -Raw -Encoding UTF8 | ConvertFrom-Json
+            ).notified
+        } catch {
+            # Следующая запись заменит повреждённый файл состояния.
+        }
+    }
+    # Об одном и том же составе замечаний сообщаем один раз.
+    if ($Signature -cne $Previous) {
+        $Outcome.Signature = $Signature
+        $Outcome.StatePath = $StatePath
+        $Own = @('settings_unreadable', 'hooks_not_canonical', 'scan_failed')
+        $Blocked = @($Findings | Where-Object { [string]$_.id -in $Own })
+        $Leftovers = @($Findings | Where-Object { [string]$_.id -notin $Own })
+        if ($Blocked.Count -gt 0) {
+            # Нечитаемый файл повторный запуск не исправит: его чинит человек.
+            $Advice = 'Run $sync-base to retry.'
+            if ([string]$Blocked[0].id -ceq 'settings_unreadable') {
+                $Advice = 'Fix the file; hooks are aligned at the next session start.'
+            }
+            $Messages += (
+                'Claude-base did not align hooks in settings.json: ' +
+                [string]$Blocked[0].detail + '. ' + $Advice
+            )
+        }
+        if ($Leftovers.Count -gt 0) {
+            $Ids = @($Leftovers | ForEach-Object { [string]$_.id } | Sort-Object -Unique) -join ', '
+            $Messages += "Leftovers of the previous base are still present ($Ids). Ask Claude to run base\runtime\hygiene.ps1 -Action Scan for the list."
+        }
+    }
+    $Outcome.Messages = $Messages
+    return $Outcome
+}
+
+$Clock = [Diagnostics.Stopwatch]::StartNew()
 $Messages = New-Object 'Collections.Generic.List[string]'
 try {
     $Updater = Join-Path (Split-Path -Parent $PSScriptRoot) 'update-session-tools.ps1'
@@ -89,7 +168,30 @@ try {
     # Проверка уведомления не блокирует запуск сессии.
 }
 
+$Hygiene = $null
+try {
+    # Сверка идёт последней и ждёт синхронизацию прежней базы не дольше,
+    # чем осталось от 40 секунд хука.
+    $Wait = [Math]::Max(1, [Math]::Min(20, 32 - [int]$Clock.Elapsed.TotalSeconds))
+    $Hygiene = Get-HygieneOutcome -WaitSeconds $Wait
+    foreach ($HygieneMessage in @($Hygiene.Messages)) {
+        [void]$Messages.Add([string]$HygieneMessage)
+    }
+} catch {
+    # Сверка хуков не блокирует запуск сессии.
+}
+
 if ($Messages.Count -gt 0) {
     [ordered]@{ systemMessage = ($Messages -join ' ') } | ConvertTo-Json -Compress
+}
+
+try {
+    if ($null -ne $Hygiene -and $null -ne $Hygiene.Signature) {
+        [IO.Directory]::CreateDirectory((Split-Path -Parent $Hygiene.StatePath)) | Out-Null
+        $StatePayload = [ordered]@{ notified = [string]$Hygiene.Signature } | ConvertTo-Json -Compress
+        Write-Utf8NoBom $Hygiene.StatePath ($StatePayload + "`n")
+    }
+} catch {
+    # Без записи состояния уведомление повторится на следующем старте.
 }
 exit 0

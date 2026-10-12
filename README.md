@@ -16,6 +16,47 @@ The base uses native Claude Code locations: `settings.json`, `agents/*.md`,
 depend on a shared runtime repository. Model and effort are not fixed by the
 base. Simple conversation invokes no tools, subagents, or reviewers.
 
+## Hooks and leftovers of the previous base
+
+The Foundation engine does not manage `settings.json`, so the base delivers its
+hooks itself. The scripts live in `runtime/hooks/` and are declared in
+`runtime/settings.json`: release check, project-memory journal, graph skeleton
+and volume widgets on `SessionStart`; the grilling, routing and
+understanding-map detectors on `UserPromptSubmit`; the screenshot reminder on
+`PreToolUse`.
+
+Hook commands start `powershell.exe -ExecutionPolicy Bypass -File`, so they do
+not depend on the PowerShell execution policy of the PC (a Group Policy that
+enforces a policy still wins).
+
+`runtime/hygiene.ps1` runs from the `SessionStart` hook and after `$sync-base`:
+
+- **Reconcile** replaces base-owned entries in `~/.claude/settings.json` with
+  the release set. A base-owned entry is a command that as a whole launches a
+  script under the user profile: one from `base/runtime/hooks/`, or a
+  previous-base script listed in `runtime/hooks-policy.json`. Only the value
+  of `hooks` is rewritten and every byte outside it is kept. Other hooks keep
+  their values; inside `hooks` the layout is normalized and base groups come
+  first. The replaced file is kept in `base/state/settings-backups/` (the
+  first copy and the nine latest). A file that is not strict UTF-8 and JSON,
+  is larger than 512 KB or nested deeper than 64 levels, cannot be replaced,
+  or changes while it is being replaced is left as is.
+- **Scan** is read-only. It reports what can still pull in the previous base:
+  an `AGENTS.md` next to `CLAUDE.md`, hooks pointing to missing scripts or to
+  the old script locations, the old git checkout, `scripts/`,
+  `settings.shared.json`, and `memory/` files that differ from the release
+  reference layer. Removing them is the owner's decision.
+
+The previous base re-applied its hooks from `settings.shared.json` at the end
+of its own `SessionStart` sync. While the sync scripts of the previous base
+are present, the reconcile therefore waits for a running sync of this profile
+to finish (up to 20 seconds within the hook timeout) and then removes its
+hook; if the sync is still running, nothing is changed and the next session
+start or `$sync-base` finishes the job.
+
+Hooks run in a nested Windows PowerShell 5.1 process whatever shell the client
+starts. Replacing `settings.json` breaks a hard link to it, if one exists.
+
 ## Delivery and token discipline
 
 Updates are one-way from immutable hub releases to consumers. `$sync-base`

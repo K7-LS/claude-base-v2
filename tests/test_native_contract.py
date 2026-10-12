@@ -296,7 +296,14 @@ def test_claude_repository_is_native_not_generated_from_another_base():
 def test_claude_runtime_does_not_upload_or_overwrite_client_state():
     settings = json.loads((ROOT / "runtime" / "settings.json").read_text("utf-8"))
     assert settings["autoMemoryEnabled"] is False
-    assert set(settings.get("hooks", {})) <= {"SessionStart"}
+    # Событий завершения сессии и перехвата результатов инструментов среди
+    # хуков базы нет: наружу они ничего не отправляют. Что они делают на ПК —
+    # проверяет tests/test_base_hooks.py.
+    assert set(settings.get("hooks", {})) <= {
+        "SessionStart",
+        "UserPromptSubmit",
+        "PreToolUse",
+    }
     assert "model" not in settings
     assert "effortLevel" not in settings
     assert "enabledPlugins" not in settings
@@ -310,10 +317,13 @@ def test_claude_runtime_does_not_upload_or_overwrite_client_state():
     assert ".claude/history.jsonl" in preserved
     assert ".claude/plugins" in preserved
 
+    # hooks-policy.json называет хуки прежней базы, которые сверка снимает;
+    # исполняемого кода в нём нет, поэтому в поиск запретных слов он не входит.
+    policy = ROOT / "runtime" / "hooks-policy.json"
     runtime_text = "\n".join(
         path.read_text(encoding="utf-8").lower()
         for path in (ROOT / "runtime").rglob("*")
-        if path.is_file()
+        if path.is_file() and path != policy
     )
     for forbidden in ("auto-push", "sessionend", "feedback-pending", "invoke-webrequest -method post"):
         assert forbidden not in runtime_text
